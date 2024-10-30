@@ -14,6 +14,6 @@ async def embedding_test(
    embedding_request_dto: EmbeddingRequestDto 
 ):
     print("Request: ", embedding_request_dto)
-    embedding = embedding_service.get_embedding()
+    embedding = embedding_service.get_embedding(embedding_request_dto)
     print("Embedding: ", embedding) 
     return embedding
