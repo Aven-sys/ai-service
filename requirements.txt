@@ -1,0 +1,11 @@
+fastapi[standard]
+uvicorn
+numpy
+pandas
+nltk
+spacy
+regex
+scikit-learn
+sentence-transformers
+huggingface-hub
+torch
