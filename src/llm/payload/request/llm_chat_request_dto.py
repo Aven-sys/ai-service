@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 from common.payload.pydantic_config import PydanticConfig
 
 class LLMChatRequestDto(BaseModel):
@@ -8,4 +8,4 @@ class LLMChatRequestDto(BaseModel):
     max_error_allowed: Optional[int] = 3
     system_prompt: Optional[str] = None
     is_structured_output: Optional[bool] = False
-    structure_output_config: Optional[List[PydanticConfig]] = None
+    structure_output_config: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None
