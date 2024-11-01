@@ -10,6 +10,6 @@ router = APIRouter(
 
 
 @router.post("/")
-async def single_rerank(list_rerank_request_dto: ListRerankRequestDto):
+async def list_rerank(list_rerank_request_dto: ListRerankRequestDto):
     rerank_result = reranker_service.list_rerank(list_rerank_request_dto)
     return rerank_result

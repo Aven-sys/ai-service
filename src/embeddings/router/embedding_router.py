@@ -9,7 +9,7 @@ router = APIRouter(
 )
 
 
-@router.post("/")
+@router.post("")
 async def embedding_test(
    embedding_request_dto: EmbeddingRequestDto 
 ):

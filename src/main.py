@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Get routes
 from embeddings.router import embedding_router
 from reranker.router import reranker_router
+from llm.router import llm_router
 
 # Initialize Fast API
 app = FastAPI()
@@ -20,7 +21,7 @@ app.add_middleware(
 # Include routers
 app.include_router(embedding_router.router)
 app.include_router(reranker_router.router)
-
+app.include_router(llm_router.router)
 
 @app.get("/")
 async def first_api():

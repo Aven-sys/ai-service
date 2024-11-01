@@ -8,7 +8,7 @@ import torch
 def rerank_sentences(request: ListRerankRequestDto):
     # Load the specified cross-encoder model
     try:
-        model = CrossEncoder(request.model_name)
+        model = CrossEncoder(request.model)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Model loading error: {str(e)}")
 
@@ -29,8 +29,8 @@ def rerank_sentences(request: ListRerankRequestDto):
     return response
 
 def sort_by_score(response: ListRerankResponseDto, reverse: bool = False, key: str = "score"):
-    return sorted(response.result, key=lambda x: getattr(x, key), reverse=reverse)
-
+    # return in ListRerankResponseDto 
+    return ListRerankResponseDto(result=sorted(response.result, key=lambda x: getattr(x, key), reverse=reverse))
 
 def sigmoid(x):
     x_tensor = torch.tensor(x)  # Convert x to a Tensor

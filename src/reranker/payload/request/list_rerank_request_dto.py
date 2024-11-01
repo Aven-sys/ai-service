@@ -9,5 +9,5 @@ class SentencePair(BaseModel):
 # Wrapper model for the list of sentence pairs
 class ListRerankRequestDto(BaseModel):
     pairs: List[SentencePair]
-    model_name: str 
+    model: str 
     sorted: str

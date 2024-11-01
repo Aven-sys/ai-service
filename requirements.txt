@@ -9,3 +9,6 @@ scikit-learn
 sentence-transformers
 huggingface-hub
 torch
+langchain 
+langchain-community 
+langchain-openai
