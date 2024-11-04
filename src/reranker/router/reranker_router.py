@@ -20,3 +20,8 @@ async def list_rerank(list_single_rerank_request_dto: ListSingleRerankRequestDto
     print_pydantic_instance(list_single_rerank_request_dto)
     rerank_result = reranker_service.list_single_rerank(list_single_rerank_request_dto)
     return rerank_result
+
+@router.post("/list-single/bm25")
+async def list_rerank(list_single_rerank_request_dto: ListSingleRerankRequestDto):
+    rerank_result = reranker_service.list_single_rerank_bm25(list_single_rerank_request_dto)
+    return rerank_result
