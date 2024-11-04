@@ -4,7 +4,9 @@ import torch
 from typing import Union
 import nltk
 from rank_bm25 import BM25Okapi
+from sklearn.feature_extraction.text import TfidfVectorizer
 import re
+from sklearn.metrics.pairwise import cosine_similarity
 
 # import payload classes
 from ..payload.request.list_rerank_request_dto import ListRerankRequestDto
@@ -113,10 +115,18 @@ def preprocess_text(text):
     # Lowercase, remove special characters, and split by whitespace
     return re.sub(r"[^a-zA-Z0-9\s]", "", text.lower()).split()
 
+def preprocess_text_string(text):
+    # Lowercase, remove special characters, and split by whitespace
+    return re.sub(r"[^a-zA-Z0-9\s]", "", text.lower())
+
 # Split and preprocess sentences
 def split_into_sentences(text):
     sentences = nltk.sent_tokenize(text)
     return [preprocess_text(sentence) for sentence in sentences]  # Assuming preprocess_text if required
+
+def remove_stopwords_string(text):
+    stop_words = set(nltk.corpus.stopwords.words("english"))
+    return " ".join(word for word in text.split() if word not in stop_words)
 
 # BM25 Scoring Function
 def compare_documents_with_sentence_bm25(request: ListSingleRerankRequestDto, min_score=0, max_score=10) -> ListSingleRerankResponseDto:
@@ -165,7 +175,37 @@ def compare_documents_with_sentence_bm25(request: ListSingleRerankRequestDto, mi
     # Return the response DTO
     return ListSingleRerankResponseDto(result=results)
 
+def rerank_sentences_single_tfidf(request: ListSingleRerankRequestDto) -> ListSingleRerankResponseDto:
+    # Load the TF-IDF model
+    try:
+        model = TfidfVectorizer(stop_words='english')
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Model loading error: {str(e)}")
 
+    # Fit TF-IDF on main_text only
+    main_vector = model.fit_transform([remove_stopwords_string(preprocess_text_string(request.main_text))])
+
+    results = []
+    for entity in request.entity_list:
+        # Transform entity text using the TF-IDF model trained on main_text
+        entity_vector = model.transform([remove_stopwords_string(preprocess_text_string(entity.text))])
+
+        # Compute cosine similarity between main_text and entity text
+        score = cosine_similarity(main_vector, entity_vector).flatten()[0]
+
+        # Append the result with score and normalized score
+        results.append(
+            RerankSingleResult(
+                text=entity.text,
+                key_id=entity.key_id,
+                score=score,
+                normalized_score=sigmoid(score)  # Apply sigmoid for normalization
+            )
+        )
+
+    # Build and return the response
+    response = ListSingleRerankResponseDto(result=results)
+    return response
 
 
 def sigmoid(x):

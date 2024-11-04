@@ -25,3 +25,9 @@ async def list_rerank(list_single_rerank_request_dto: ListSingleRerankRequestDto
 async def list_rerank(list_single_rerank_request_dto: ListSingleRerankRequestDto):
     rerank_result = reranker_service.list_single_rerank_bm25(list_single_rerank_request_dto)
     return rerank_result
+
+@router.post("/list-single/tfidf")
+async def list_rerank(list_single_rerank_request_dto: ListSingleRerankRequestDto):
+    rerank_result = reranker_service.list_single_rerank_tfidf(list_single_rerank_request_dto)
+    print_pydantic_instance(rerank_result)
+    return rerank_result
