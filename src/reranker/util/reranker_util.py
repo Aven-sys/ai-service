@@ -2,6 +2,9 @@ from sentence_transformers import CrossEncoder
 from fastapi import HTTPException
 import torch
 from typing import Union
+import nltk
+from rank_bm25 import BM25Okapi
+import re
 
 # import payload classes
 from ..payload.request.list_rerank_request_dto import ListRerankRequestDto
@@ -105,8 +108,68 @@ def sort_by_score(
         return ListSingleRerankResponseDto(result=sorted_result)
     else:
         raise ValueError("Unsupported response type")
+    
+def preprocess_text(text):
+    # Lowercase, remove special characters, and split by whitespace
+    return re.sub(r"[^a-zA-Z0-9\s]", "", text.lower()).split()
+
+# Split and preprocess sentences
+def split_into_sentences(text):
+    sentences = nltk.sent_tokenize(text)
+    return [preprocess_text(sentence) for sentence in sentences]  # Assuming preprocess_text if required
+
+# BM25 Scoring Function
+def compare_documents_with_sentence_bm25(request: ListSingleRerankRequestDto, min_score=0, max_score=10) -> ListSingleRerankResponseDto:
+    """
+    Compare a main document with multiple entities using BM25, scoring each entity based on its alignment with the main document.
+    """
+    # Split main_text into sentences for BM25 corpus
+    main_sentences = split_into_sentences(request.main_text)
+    # bm25 = BM25Okapi(main_sentences, b=0.75, k1=1.2)
+    print("main_sentences: ", main_sentences)
+    # Prepare results
+    results = []
+
+    # Process each entity in the request
+    for entity in request.entity_list:
+        # Split entity text into sentences
+        entity_sentences = split_into_sentences(entity.text)
+        print("entity_sentences: ", entity_sentences)
+        bm25 = BM25Okapi(entity_sentences, b=0.75, k1=1.2)
+
+        # Score each sentence in entity against the main_text corpus
+        scores = []
+        # for query_sentence in entity_sentences:
+        for query_sentence in main_sentences:
+            # Get BM25 scores for the query sentence against the main_text corpus
+            sentence_scores = bm25.get_scores(query_sentence)
+            # if sentence_scores:  # Ensure there are scores to take the max from
+            scores.append(max(sentence_scores))  # Take the highest score for the query sentence
+
+        # Calculate average score and normalized score
+        average_score = sum(scores) / len(scores) if scores else 0
+        normalized_scores = [
+            (score - min_score) / (max_score - min_score) if max_score > min_score else 0
+            for score in scores
+        ]
+        normalized_average_score = sum(normalized_scores) / len(normalized_scores) if normalized_scores else 0
+
+        # Append result for the entity
+        results.append(RerankSingleResult(
+            text=entity.text,
+            key_id=entity.key_id,
+            score=average_score,
+            normalized_score=normalized_average_score
+        ))
+
+    # Return the response DTO
+    return ListSingleRerankResponseDto(result=results)
+
+
 
 
 def sigmoid(x):
     x_tensor = torch.tensor(x)  # Convert x to a Tensor
     return 1 / (1 + torch.exp(-x_tensor))
+
+
