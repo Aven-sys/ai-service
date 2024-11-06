@@ -14,14 +14,17 @@ class JobParsedDataDTO(BaseModel):
 
 class CandidateParsedDataDTO(BaseModel):
     candidateId: Optional[int]
-    candidateQualifications: Optional[List[str]] = List()
-    candidateLanguages: Optional[List[str]] = List()
-    candidateSkills: Optional[List[str]] = List()
-    candidateJobTitles: Optional[List[str]] = List()
+    candidateQualifications: Optional[List[str]] = []
+    candidateLanguages: Optional[List[str]] = []
+    candidateSkills: Optional[List[str]] = []
+    candidateJobTitles: Optional[List[str]] = []
     candidateNationality: Optional[str]
     candidateDetails: Optional[str]
-    candidateFieldOfStudy: Optional[List[str]] = List()
+    candidateFieldOfStudy: Optional[List[str]] = []
     candidateWorkExperiences: Optional[str]
+    candidateEducation: Optional[str]
+    candidateLocation: Optional[str]
+    candidateYearsOfExperience: Optional[int]
 
 class JobToCandidatesMatchingRequestDTO(BaseModel):
     candidatesData: List[CandidateParsedDataDTO]
