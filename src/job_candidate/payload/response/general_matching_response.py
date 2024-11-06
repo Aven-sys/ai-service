@@ -1,11 +1,21 @@
-from typing import List, Any
+from typing import List, Any, Optional
 from pydantic import BaseModel
 
 class MatchResult(BaseModel):
-    source_item: str
-    target_item: str
-    similarity_score: float
+    source_item: Optional[str] = None
+    target_item: Optional[str] = None
+    similarity_score: Optional[float] = None
 
 class GeneralMatchingResponse(BaseModel):
-    matches: List[MatchResult]
-    overall_score: float
+    matches: Optional[List[MatchResult]] = None
+    overall_score: Optional[float] = None
+
+    @classmethod
+    def empty_response(cls):
+        # Generate an instance with all fields set to None
+        return cls(matches=None, overall_score=None)
+
+    @classmethod
+    def empty_response(cls):
+        # Generate an instance with all None fields
+        return cls(matches=None, overall_score=None)

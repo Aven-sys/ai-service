@@ -17,14 +17,20 @@ import nltk
 # Initialize lemmatizer
 lemmatizer = WordNetLemmatizer()
 
+# def preprocess_text_words(text: str) -> str:
+#     # Lowercase, remove punctuation and stopwords, and lemmatize
+#     text = text.lower()
+#     text = re.sub(f"[{re.escape(string.punctuation)}]", "", text)
+#     words = text.split()
+#     words = [lemmatizer.lemmatize(word) for word in words if word not in stopwords.words("english")]
+#     return " ".join(words)
 
 def preprocess_text_words(text: str) -> str:
     # Lowercase, remove punctuation and stopwords, and lemmatize
     text = text.lower()
     text = re.sub(f"[{re.escape(string.punctuation)}]", "", text)
-    words = text.split()
-    words = [lemmatizer.lemmatize(word) for word in words if word not in stopwords.words("english")]
-    return " ".join(words)
+    words = nltk.word_tokenize(text)
+    return words
 
 def preprocess_text_sentences(text: str) -> List[str]:
     # Lowercase, remove punctuation and stopwords, and lemmatize
@@ -135,3 +141,19 @@ def get_tfidf_skills_matching2(job_skills: List[str], candidate_skills: List[str
 
     # Return in the required GeneralMatchingResponse format
     return GeneralMatchingResponse(matches=results, overall_score=min(overall_score, 10))
+
+def get_years_of_experience_matching(job_years_of_experience, candidate_years_of_experience):
+    if (job_years_of_experience == 0 or job_years_of_experience == None):
+        return GeneralMatchingResponse.empty_response()
+    
+    if (candidate_years_of_experience == None): 
+        return GeneralMatchingResponse(matches=None, overall_score=0)
+    
+    if (candidate_years_of_experience >= job_years_of_experience):
+        return GeneralMatchingResponse(matches=None, overall_score=10)
+    elif (candidate_years_of_experience < job_years_of_experience):
+        score = (candidate_years_of_experience / job_years_of_experience) * 10
+        return GeneralMatchingResponse(matches=None, overall_score=score)
+    
+
+       
