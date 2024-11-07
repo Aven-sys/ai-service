@@ -83,7 +83,8 @@ You are an interviewer conducting a structured interview. Ask one question at a 
 Greet the interviewee first politely. Then start the interview by asking the following questions:
 {interview_questions}
 
-After each answer, provide brief feedback if appropriate, then stop. Wait for the interviewee’s next input before asking the next question.
+After each answer, provide brief feedback if appropriate, then stop. Wait for the interviewee’s next input before asking the next question. Once the interview is completed, ask the interviewee’s if he/she has anything to add.
+If not, summarize the interview and thank the interviewee’s for participating in the interview.
 
 {format_instructions}
 """
@@ -230,8 +231,14 @@ async def interview(
     #         else "No summary available."
     #     )
     #     return {"response": result.full_output, "is_done": True, "summary": summary}
+    response_audio = generate_audio_base64(interview_output.interviewer_output)
 
-    return {"response": interview_output, "is_done": False}
+    return InterviewStartResponseDto(
+        session_id=session_id,
+        response=interview_output,
+        response_audio=response_audio,
+    )
+    # return {"response": interview_output, "is_done": False}
 
 
 # End the interview and retrieve the full history
