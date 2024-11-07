@@ -22,6 +22,7 @@ from langchain_openai import ChatOpenAI
 from uuid import uuid4
 from ..util.session_histories_util import get_session_history, session_histories
 from langchain_core.runnables.history import RunnableWithMessageHistory
+import json
 
 # Request payload
 from ..payload.request.llm_chat_request_dto import LLMChatRequestDto
@@ -39,12 +40,17 @@ class InterviewInput(BaseModel):
 # Define Pydantic model for structured output
 class InterviewOutput(BaseModel):
     # full_output: str = Field(..., description="The full conversation output with the most current llm response to it")
-    interviewer_output: str = Field(..., description="The interviewer output with the most current LLM response to it")
+    interviewer_output: str = Field(
+        ...,
+        description="The interviewer output with the most current LLM response to it. The question should be in the output when the interviewer is asking a question.",
+    )
     question: Optional[str] = Field(
-        None, description="The current question being asked by the interviewer"
+        None,
+        description="The current question being asked by the interviewer. This is just to store the question for reference.",
     )
     answer: Optional[str] = Field(
-        None, description="The interviewee's answer to the current question. Do not paraphrase or summarize the answer."
+        None,
+        description="The interviewee's answer to the current question. Do not paraphrase or summarize the answer. This is just to store the answer for reference.",
     )
     is_done: bool = Field(
         ..., description="Indicates if the interview process is complete"
@@ -54,14 +60,15 @@ class InterviewOutput(BaseModel):
         description="A summary of all answers provided by the interviewee at the end of the interview",
     )
     chat_history: Optional[str] = Field(
-        None, description="The full chat history of the interview. Interview output and user input."
+        None,
+        description="The full chat history of the interview. Interview output and user input.",
     )
 
 
 # System prompt that includes all questions and instructions
 system_prompt = """
 You are an interviewer conducting a structured interview. Ask one question at a time, then wait for the interviewee's response before proceeding to the next question. 
-Greet the interviewer first and then ask the following questions:
+Greet the interviewee first politely. Then start the interview by asking the following questions:
 1. How old are you?
 2. What is your favorite movie?
 3. What is your favorite food?
@@ -98,7 +105,8 @@ prompt = prompt.partial(format_instructions=parser.get_format_instructions())
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 # Combine the prompt, LLM, and parser into a chain
-chain = prompt | llm | parser
+# chain = prompt | llm | parser
+chain = prompt | llm
 
 # Wrap the chain with RunnableWithMessageHistory
 chain_with_history = RunnableWithMessageHistory(
@@ -121,7 +129,9 @@ async def start_interview(memory_type: str = "chat"):
         {"input": "Let's start the interview"},
         config={"configurable": {"session_id": session_id}},
     )
-    return {"session_id": session_id, **result.dict()}
+    interview_output = InterviewOutput(**json.loads(result.content))
+
+    return {"session_id": session_id, "response": interview_output}
 
 
 @router.post("/interview")
@@ -140,6 +150,7 @@ async def interview(interview_input: InterviewInput):
         config={"configurable": {"session_id": interview_input.session_id}},
     )
 
+    interview_output = InterviewOutput(**json.loads(result.content))
     print("Current chat history after user input:", result)
 
     # # Determine if interview is done based on `is_done` in result
@@ -151,7 +162,7 @@ async def interview(interview_input: InterviewInput):
     #     )
     #     return {"response": result.full_output, "is_done": True, "summary": summary}
 
-    return {"response": result.interviewer_output, "is_done": False}
+    return {"response": interview_output, "is_done": False}
 
 
 # End the interview and retrieve the full history
