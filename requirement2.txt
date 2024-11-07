@@ -12,3 +12,4 @@ torch
 requests
 transformers
 rank_bm25
+gtts
