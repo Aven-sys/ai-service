@@ -10,7 +10,7 @@ from ..util.langchain_pydantic_model_generator import (
 )
 from ..service import interview_llm_service
 
-from typing import Optional
+from typing import Optional, Dict
 from pydantic import BaseModel, Field
 from langchain_core.prompts import (
     ChatPromptTemplate,
@@ -32,14 +32,18 @@ router = APIRouter(
 )
 
 
+class InterviewStartRequestDto(BaseModel):
+    memory_type: Optional[str] = "chat"
+    context: Dict
+
+
 class InterviewInput(BaseModel):
     session_id: str
-    user_input: str
+    context: Dict
 
 
 # Define Pydantic model for structured output
 class InterviewOutput(BaseModel):
-    # full_output: str = Field(..., description="The full conversation output with the most current llm response to it")
     interviewer_output: str = Field(
         ...,
         description="The interviewer output with the most current LLM response to it. The question should be in the output when the interviewer is asking a question.",
@@ -69,11 +73,7 @@ class InterviewOutput(BaseModel):
 system_prompt = """
 You are an interviewer conducting a structured interview. Ask one question at a time, then wait for the interviewee's response before proceeding to the next question. 
 Greet the interviewee first politely. Then start the interview by asking the following questions:
-1. How old are you?
-2. What is your favorite movie?
-3. What is your favorite food?
-4. What is your highest education level?
-5. What is your favorite animal?
+{interview_questions}
 
 After each answer, provide brief feedback if appropriate, then stop. Wait for the interviewee’s next input before asking the next question.
 
@@ -82,15 +82,6 @@ After each answer, provide brief feedback if appropriate, then stop. Wait for th
 
 # Initialize the parser
 parser = PydanticOutputParser(pydantic_object=InterviewOutput)
-
-# Initalize the chat prompt template
-# prompt_template = PromptTemplate(
-#     input_variables=["history"],
-#     template=system_prompt + "\n{history}",
-#     partial_variables={
-#         "format_instructions": parser.get_format_instructions(),
-#     },
-# )
 
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -116,17 +107,19 @@ chain_with_history = RunnableWithMessageHistory(
     history_messages_key="history",
 )
 
-
 @router.post("/start-interview")
-async def start_interview(memory_type: str = "chat"):
+async def start_interview(interview_start_request_dto: InterviewStartRequestDto):
     session_id = str(uuid4())
 
     # Initialize the session with the specified memory type
-    get_session_history(session_id, memory_type=memory_type)
+    get_session_history(session_id, memory_type=interview_start_request_dto.memory_type)
 
     # Start the interview with an empty input (LLM will handle the flow)
     result = chain_with_history.invoke(
-        {"input": "Let's start the interview"},
+        {
+            "input": "Let's start the interview",
+            **interview_start_request_dto.context,
+        },
         config={"configurable": {"session_id": session_id}},
     )
     interview_output = InterviewOutput(**json.loads(result.content))
@@ -146,7 +139,7 @@ async def interview(interview_input: InterviewInput):
 
     # Invoke the chain with user response and session history
     result = chain_with_history.invoke(
-        {"input": interview_input.user_input},
+        {**interview_input.context},
         config={"configurable": {"session_id": interview_input.session_id}},
     )
 
