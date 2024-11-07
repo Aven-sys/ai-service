@@ -24,6 +24,7 @@ from ..util.session_histories_util import get_session_history, session_histories
 from langchain_core.runnables.history import RunnableWithMessageHistory
 import json
 from ..util.interview_llm_util import generate_audio_base64
+import whisper
 
 # Request payload
 from ..payload.request.llm_chat_request_dto import LLMChatRequestDto
@@ -114,6 +115,22 @@ chain_with_history = RunnableWithMessageHistory(
     history_messages_key="history",
 )
 
+# Load whisper
+whisper_model = whisper.load_model("base")
+
+async def transcript_audio(audio_file):
+     # Read the audio file content from `UploadFile` and save it to a temporary file
+    audio_content = await audio_file.read()  # Read the audio data as bytes
+
+    # Transcribe the audio data using Whisper
+    with open("temp_audio.wav", "wb") as temp_audio_file:
+        temp_audio_file.write(audio_content)
+    
+    # Run Whisper transcription on the saved file
+    transcription_result = whisper_model.transcribe("temp_audio.wav")
+    transcription_text = transcription_result["text"]
+    print("Transcription:", transcription_text)
+    return transcription_text
 
 @router.post("/start-interview")
 async def start_interview(interview_start_request_dto: InterviewStartRequestDto):
@@ -183,6 +200,10 @@ async def interview(
 
     # Create `InterviewInput` model manually with parsed data
     interview_input = InterviewInput(session_id=session_id, context=context_dict)
+
+    # transcript audio
+    transcription_text = await transcript_audio(audio_file)
+    interview_input.context["input"] = transcription_text
 
     # Check if session exists
     if interview_input.session_id not in session_histories:
