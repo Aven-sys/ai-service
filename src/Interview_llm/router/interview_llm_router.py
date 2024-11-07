@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, File, UploadFile, Form
 from common.util import pydantic_util
 from common.util.langchain_pydantic_model_generator import (
     print_pydantic_instance,
@@ -23,6 +23,7 @@ from uuid import uuid4
 from ..util.session_histories_util import get_session_history, session_histories
 from langchain_core.runnables.history import RunnableWithMessageHistory
 import json
+from ..util.interview_llm_util import generate_audio_base64
 
 # Request payload
 from ..payload.request.llm_chat_request_dto import LLMChatRequestDto
@@ -69,6 +70,12 @@ class InterviewOutput(BaseModel):
     )
 
 
+class InterviewStartResponseDto(BaseModel):
+    session_id: str
+    response: InterviewOutput
+    response_audio: Optional[str] = None
+
+
 # System prompt that includes all questions and instructions
 system_prompt = """
 You are an interviewer conducting a structured interview. Ask one question at a time, then wait for the interviewee's response before proceeding to the next question. 
@@ -107,6 +114,7 @@ chain_with_history = RunnableWithMessageHistory(
     history_messages_key="history",
 )
 
+
 @router.post("/start-interview")
 async def start_interview(interview_start_request_dto: InterviewStartRequestDto):
     session_id = str(uuid4())
@@ -124,11 +132,58 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
     )
     interview_output = InterviewOutput(**json.loads(result.content))
 
-    return {"session_id": session_id, "response": interview_output}
+    response_audio = generate_audio_base64(interview_output.interviewer_output)
+
+    return InterviewStartResponseDto(
+        session_id=session_id,
+        response=interview_output,
+        response_audio=response_audio,
+    )
+
+
+# @router.post("/interview")
+# async def interview(interview_input: InterviewInput):
+#     # Check if session exists
+#     if interview_input.session_id not in session_histories:
+#         raise HTTPException(status_code=404, detail="Session not found")
+
+#     # Retrieve and print the chat history to verify it's being retained
+#     history = session_histories[interview_input.session_id]
+#     print("Current chat history:", history)
+
+#     # Invoke the chain with user response and session history
+#     result = chain_with_history.invoke(
+#         {**interview_input.context},
+#         config={"configurable": {"session_id": interview_input.session_id}},
+#     )
+
+#     interview_output = InterviewOutput(**json.loads(result.content))
+#     print("Current chat history after user input:", result)
+
+#     # # Determine if interview is done based on `is_done` in result
+#     # if result.is_done:
+#     #     summary = (
+#     #         "Summary of the interview:\n" + result.summary
+#     #         if result.summary
+#     #         else "No summary available."
+#     #     )
+#     #     return {"response": result.full_output, "is_done": True, "summary": summary}
+
+#     return {"response": interview_output, "is_done": False}
 
 
 @router.post("/interview")
-async def interview(interview_input: InterviewInput):
+async def interview(
+    audio_file: UploadFile = File(...),
+    session_id: str = Form(...),
+    context: str = Form(...),
+):
+    # Parse JSON `context` string to a Python dictionary
+    context_dict = json.loads(context)
+
+    # Create `InterviewInput` model manually with parsed data
+    interview_input = InterviewInput(session_id=session_id, context=context_dict)
+
     # Check if session exists
     if interview_input.session_id not in session_histories:
         raise HTTPException(status_code=404, detail="Session not found")

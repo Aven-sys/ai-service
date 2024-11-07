@@ -16,23 +16,25 @@ from .langchain_pydantic_model_generator import (
 import json
 from dotenv import load_dotenv
 import os
+from gtts import gTTS
+from io import BytesIO
+import base64
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 
-# Dictionary to store history for each session
-session_histories = {}
+# Function to generate audio using gTTS
+def generate_audio(text: str) -> BytesIO:
+    audio_file = BytesIO()
+    tts = gTTS(text=text, lang='en')
+    tts.write_to_fp(audio_file)
+    audio_file.seek(0)
+    return audio_file
 
-def get_session_history(session_id: str, memory_type: str = "chat") -> BaseChatMessageHistory:
-    # Initialize session with the chosen memory type
-    if session_id not in session_histories:
-        if memory_type == "chat":
-            session_histories[session_id] = ChatMessageHistory()
-        elif memory_type == "token":
-            session_histories[session_id] = ConversationTokenBufferMemory(token_limit=1000)  # Adjust token limit as needed
-        elif memory_type == "summarize":
-            session_histories[session_id] = ConversationSummaryBufferMemory()
-        else:
-            raise ValueError(f"Unsupported memory type: {memory_type}")
-    return session_histories[session_id]
-
+def generate_audio_base64(text: str) -> str:
+    audio_file = BytesIO()
+    tts = gTTS(text=text, lang='en')
+    tts.write_to_fp(audio_file)
+    audio_file.seek(0)
+    audio_base64 = base64.b64encode(audio_file.read()).decode('utf-8')
+    return audio_base64
