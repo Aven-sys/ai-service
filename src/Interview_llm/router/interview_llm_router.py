@@ -12,7 +12,11 @@ from ..service import interview_llm_service
 
 from typing import Optional
 from pydantic import BaseModel, Field
-from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
+from langchain_core.prompts import (
+    ChatPromptTemplate,
+    PromptTemplate,
+    MessagesPlaceholder,
+)
 from langchain.output_parsers import PydanticOutputParser
 from langchain_openai import ChatOpenAI
 from uuid import uuid4
@@ -26,20 +30,21 @@ router = APIRouter(
     prefix="/api/llm-interview",
 )
 
+
 class InterviewInput(BaseModel):
-    session_id: str 
-    user_input: str 
+    session_id: str
+    user_input: str
+
 
 # Define Pydantic model for structured output
 class InterviewOutput(BaseModel):
-    full_output: str = Field(
-        ..., description="LLm response"
-    )
+    # full_output: str = Field(..., description="The full conversation output with the most current llm response to it")
+    interviewer_output: str = Field(..., description="The interviewer output with the most current LLM response to it")
     question: Optional[str] = Field(
         None, description="The current question being asked by the interviewer"
     )
     answer: Optional[str] = Field(
-        None, description="The interviewee's answer to the current question"
+        None, description="The interviewee's answer to the current question. Do not paraphrase or summarize the answer."
     )
     is_done: bool = Field(
         ..., description="Indicates if the interview process is complete"
@@ -47,6 +52,9 @@ class InterviewOutput(BaseModel):
     summary: Optional[str] = Field(
         None,
         description="A summary of all answers provided by the interviewee at the end of the interview",
+    )
+    chat_history: Optional[str] = Field(
+        None, description="The full chat history of the interview. Interview output and user input."
     )
 
 
@@ -69,25 +77,34 @@ After each answer, provide brief feedback if appropriate, then stop. Wait for th
 parser = PydanticOutputParser(pydantic_object=InterviewOutput)
 
 # Initalize the chat prompt template
-prompt_template = PromptTemplate(
-    input_variables=["history"],
-    template=system_prompt + "\n{history}",
-    partial_variables={
-        "format_instructions": parser.get_format_instructions(),
-    },
+# prompt_template = PromptTemplate(
+#     input_variables=["history"],
+#     template=system_prompt + "\n{history}",
+#     partial_variables={
+#         "format_instructions": parser.get_format_instructions(),
+#     },
+# )
+
+prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", system_prompt),
+        MessagesPlaceholder(variable_name="history"),
+        ("human", "{input}"),
+    ]
 )
+prompt = prompt.partial(format_instructions=parser.get_format_instructions())
 
 # Initialize the LLM
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 # Combine the prompt, LLM, and parser into a chain
-chain = prompt_template | llm | parser
+chain = prompt | llm | parser
 
 # Wrap the chain with RunnableWithMessageHistory
 chain_with_history = RunnableWithMessageHistory(
     runnable=chain,
     get_session_history=get_session_history,
-    input_messages_key="history",
+    input_messages_key="input",
     history_messages_key="history",
 )
 
@@ -101,46 +118,53 @@ async def start_interview(memory_type: str = "chat"):
 
     # Start the interview with an empty input (LLM will handle the flow)
     result = chain_with_history.invoke(
-        {}, config={"configurable": {"session_id": session_id}}
+        {"input": "Let's start the interview"},
+        config={"configurable": {"session_id": session_id}},
     )
-
     return {"session_id": session_id, **result.dict()}
+
 
 @router.post("/interview")
 async def interview(interview_input: InterviewInput):
     # Check if session exists
     if interview_input.session_id not in session_histories:
         raise HTTPException(status_code=404, detail="Session not found")
-    
+
     # Retrieve and print the chat history to verify it's being retained
     history = session_histories[interview_input.session_id]
-    print("Current chat history:")
-    
-    
+    print("Current chat history:", history)
+
     # Invoke the chain with user response and session history
     result = chain_with_history.invoke(
-        {"history": interview_input.user_input},
-        config={"configurable": {"session_id": interview_input.session_id}}
+        {"input": interview_input.user_input},
+        config={"configurable": {"session_id": interview_input.session_id}},
     )
-    
-    # Determine if interview is done based on `is_done` in result
-    if result.is_done:
-        summary = "Summary of the interview:\n" + result.summary if result.summary else "No summary available."
-        return {"response": result.full_output, "is_done": True, "summary": summary}
-    
-    return {"response": result.full_output, "is_done": False}
+
+    print("Current chat history after user input:", result)
+
+    # # Determine if interview is done based on `is_done` in result
+    # if result.is_done:
+    #     summary = (
+    #         "Summary of the interview:\n" + result.summary
+    #         if result.summary
+    #         else "No summary available."
+    #     )
+    #     return {"response": result.full_output, "is_done": True, "summary": summary}
+
+    return {"response": result.interviewer_output, "is_done": False}
+
 
 # End the interview and retrieve the full history
 @router.post("/end-interview")
 async def end_interview(session_id: str):
     if session_id not in session_histories:
         raise HTTPException(status_code=404, detail="Session not found")
-    
+
     # Retrieve full conversation history
     history = session_histories[session_id].get_all_messages()
     full_history = [{"role": msg.role, "content": msg.content} for msg in history]
-    
+
     # Clean up memory after retrieving history
     del session_histories[session_id]
-    
+
     return {"transcript": full_history}
