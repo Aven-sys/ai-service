@@ -10,7 +10,7 @@ from ..util.langchain_pydantic_model_generator import (
 )
 from ..service import interview_llm_service
 
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from pydantic import BaseModel, Field
 from langchain_core.prompts import (
     ChatPromptTemplate,
@@ -25,6 +25,7 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 import json
 from ..util.interview_llm_util import generate_audio_base64
 import whisper
+from langchain_core.messages import BaseMessage
 
 # Request payload
 from ..payload.request.llm_chat_request_dto import LLMChatRequestDto
@@ -75,6 +76,7 @@ class InterviewStartResponseDto(BaseModel):
     session_id: str
     response: InterviewOutput
     response_audio: Optional[str] = None
+    chat_history: Optional[List[BaseMessage]] = None
 
 
 # System prompt that includes all questions and instructions
@@ -84,7 +86,8 @@ Greet the interviewee first politely. Then start the interview by asking the fol
 {interview_questions}
 
 After each answer, provide brief feedback if appropriate, then stop. Wait for the interviewee’s next input before asking the next question. Once the interview is completed, ask the interviewee’s if he/she has anything to add.
-If not, summarize the interview and thank the interviewee’s for participating in the interview.
+If not, summarize the interview and asked the interviewee’s if the information is correct.
+If the interviewee’s agree, end the interview and thank the interviewee’s for participating in the interview. Only set is_done to True when the interview is completed and you will not expect a response from the interviewee’s.
 
 {format_instructions}
 """
@@ -119,19 +122,21 @@ chain_with_history = RunnableWithMessageHistory(
 # Load whisper
 whisper_model = whisper.load_model("base")
 
+
 async def transcript_audio(audio_file):
-     # Read the audio file content from `UploadFile` and save it to a temporary file
+    # Read the audio file content from `UploadFile` and save it to a temporary file
     audio_content = await audio_file.read()  # Read the audio data as bytes
 
     # Transcribe the audio data using Whisper
     with open("temp_audio.wav", "wb") as temp_audio_file:
         temp_audio_file.write(audio_content)
-    
+
     # Run Whisper transcription on the saved file
     transcription_result = whisper_model.transcribe("temp_audio.wav")
     transcription_text = transcription_result["text"]
     print("Transcription:", transcription_text)
     return transcription_text
+
 
 @router.post("/start-interview")
 async def start_interview(interview_start_request_dto: InterviewStartRequestDto):
@@ -152,10 +157,14 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
 
     response_audio = generate_audio_base64(interview_output.interviewer_output)
 
+    # View Chat History
+    chat_history = session_histories[session_id].messages
+
     return InterviewStartResponseDto(
         session_id=session_id,
         response=interview_output,
         response_audio=response_audio,
+        chat_history=chat_history,
     )
 
 
@@ -233,10 +242,14 @@ async def interview(
     #     return {"response": result.full_output, "is_done": True, "summary": summary}
     response_audio = generate_audio_base64(interview_output.interviewer_output)
 
+    # View Chat History
+    chat_history = session_histories[interview_input.session_id].messages
+
     return InterviewStartResponseDto(
         session_id=session_id,
         response=interview_output,
         response_audio=response_audio,
+        chat_history=chat_history,
     )
     # return {"response": interview_output, "is_done": False}
 
