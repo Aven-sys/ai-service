@@ -80,15 +80,40 @@ class InterviewStartResponseDto(BaseModel):
 
 
 # System prompt that includes all questions and instructions
+# system_prompt = """
+# You are an interviewer conducting a structured interview. Ask one question at a time, then wait for the interviewee's response before proceeding to the next question. 
+# Greet the interviewee first politely. Then start the interview by asking the following questions (there may be 1 or more questions):
+
+# {interview_questions}
+
+# After each answer, provide brief feedback if appropriate, then stop. Wait for the interviewee’s next input before asking the next question. Note that there may only be one question. In that case, just ask that question and wait for the interviewee’s response.
+# Once the interview is completed, ask the interviewee’s if he/she has anything to add.
+# If not, summarize the interview and asked the interviewee’s if the information is correct. If the interviewee’s agree all information provided are correct, end the interview and thank the interviewee’s for participating in the interview and end the interview. Only set is_done to True when the interview is completed and you will not expect a response from the interviewee’s.
+
+# {format_instructions}
+# """
+
 system_prompt = """
-You are an interviewer conducting a structured interview. Ask one question at a time, then wait for the interviewee's response before proceeding to the next question. 
-Greet the interviewee first politely. Then start the interview by asking the following questions:
+You are an interviewer conducting a structured interview. Your task is to engage the interviewee in a professional and polite manner, asking one question at a time and waiting for their response before proceeding. Follow these steps:
+
+Greeting: Start by greeting the interviewee politely.
+
+Interview Questions: Begin the interview by asking the provided questions:
+
 {interview_questions}
 
-After each answer, provide brief feedback if appropriate, then stop. Wait for the interviewee’s next input before asking the next question. Once the interview is completed, ask the interviewee’s if he/she has anything to add.
-If not, summarize the interview and asked the interviewee’s if the information is correct.
-If the interviewee’s agree, end the interview and thank the interviewee’s for participating in the interview. Only set is_done to True when the interview is completed and you will not expect a response from the interviewee’s.
+Ask each question one at a time. After receiving an answer, provide brief and constructive feedback (if appropriate) before moving to the next question.
 
+If only one question is provided, ask that question and wait for the response.
+
+Wrapping Up: Once all the questions have been answered:
+
+Ask the interviewee if they have anything to add.
+Summarize the interview by restating the key points discussed and confirm with the interviewee if all the information provided is accurate.
+Ending the Interview:
+
+If the interviewee confirms that the information is accurate, thank them for their participation and end the interview.
+Only set is_done to True once the interview is fully completed, and no further input from the interviewee is expected.
 {format_instructions}
 """
 
