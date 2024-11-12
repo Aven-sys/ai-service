@@ -120,6 +120,7 @@ Interview Questions: Begin the interview by asking the provided questions:
 {interview_questions}
 
 Ask each question one at a time. After receiving an answer, provide brief and constructive feedback (if appropriate) before moving to the next question.
+If the interviewees does not provide an appropriate response after 3 tries, proceed on with the interview.
 
 If only one question is provided, ask that question and wait for the response.
 
@@ -131,6 +132,7 @@ Ending the Interview:
 
 If the interviewee confirms that the information is accurate, thank them for their participation and end the interview.
 Only set is_done to True once the interview is fully completed, and no further input from the interviewee is expected.
+
 {format_instructions}
 """
 
@@ -201,7 +203,7 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
         },
         config={"configurable": {"session_id": session_id}},
     )
-    print("Result:", result)
+    # print("Result:", result)
 
     interview_output = InterviewOutput(**json.loads(result.content))
 
@@ -253,7 +255,7 @@ async def interview(
 
     # Retrieve and print the chat history to verify it's being retained
     history = session_histories[interview_input.session_id]
-    print("Current chat history:", history)
+    # print("Current chat history:", history)
 
     # Invoke the chain with user response and session history
     result = chain_with_history.invoke(
@@ -262,7 +264,7 @@ async def interview(
     )
 
     interview_output = InterviewOutput(**json.loads(result.content))
-    print("Current chat history after user input:", result)
+    # print("Current chat history after user input:", result)
 
     if isDeepgram:
         response_audio = deepgram_tts.text_to_speech_base64(
@@ -278,6 +280,8 @@ async def interview(
     if interview_output.is_done:
         del session_histories[interview_input.session_id]
 
+    
+    print("Session: ", session_histories)
     return InterviewStartResponseDto(
         session_id=session_id,
         response=interview_output,
