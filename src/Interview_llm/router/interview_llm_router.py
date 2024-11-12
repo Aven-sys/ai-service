@@ -27,8 +27,25 @@ from ..util.interview_llm_util import generate_audio_base64
 import whisper
 from langchain_core.messages import BaseMessage
 
+# Groq
+from ..util.groq_llm_util import GroqTranscriptionService
+from langchain_groq import ChatGroq
+
+# Deepgram
+from ..util.deepgram_util import DeepgramTTS
+
 # Request payload
 from ..payload.request.llm_chat_request_dto import LLMChatRequestDto
+
+from dotenv import load_dotenv
+import os
+
+deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+
+# ========================= Flags =========================
+isUseGroq = False
+isDeepgram = False
+# ========================= Flags =========================
 
 router = APIRouter(
     prefix="/api/llm-interview",
@@ -81,7 +98,7 @@ class InterviewStartResponseDto(BaseModel):
 
 # System prompt that includes all questions and instructions
 # system_prompt = """
-# You are an interviewer conducting a structured interview. Ask one question at a time, then wait for the interviewee's response before proceeding to the next question. 
+# You are an interviewer conducting a structured interview. Ask one question at a time, then wait for the interviewee's response before proceeding to the next question.
 # Greet the interviewee first politely. Then start the interview by asking the following questions (there may be 1 or more questions):
 
 # {interview_questions}
@@ -147,6 +164,11 @@ chain_with_history = RunnableWithMessageHistory(
 # Load whisper
 whisper_model = whisper.load_model("base")
 
+# Load Groq Transcription Service
+groq_transcription_client = GroqTranscriptionService()
+
+# Deep gram 
+deepgram_tts = DeepgramTTS(api_key=deepgram_api_key)
 
 async def transcript_audio(audio_file):
     # Read the audio file content from `UploadFile` and save it to a temporary file
@@ -178,9 +200,14 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
         },
         config={"configurable": {"session_id": session_id}},
     )
+    print("Result:", result)
+
     interview_output = InterviewOutput(**json.loads(result.content))
 
-    response_audio = generate_audio_base64(interview_output.interviewer_output)
+    if isDeepgram:
+        response_audio = deepgram_tts.text_to_speech_base64(interview_output.interviewer_output)
+    else:
+        response_audio = generate_audio_base64(interview_output.interviewer_output)
 
     # View Chat History
     chat_history = session_histories[session_id].messages
@@ -236,8 +263,16 @@ async def interview(
     # Create `InterviewInput` model manually with parsed data
     interview_input = InterviewInput(session_id=session_id, context=context_dict)
 
-    # transcript audio
-    transcription_text = await transcript_audio(audio_file)
+    if isUseGroq:
+        # transcript audio (Groq)
+        file_content = await audio_file.read()
+        transcription_text = groq_transcription_client.transcribe_audio(
+            file_content, audio_file.filename
+        )
+    else:
+        # transcript audio (Normal)
+        transcription_text = await transcript_audio(audio_file)
+
     interview_input.context["input"] = transcription_text
 
     # Check if session exists
@@ -265,7 +300,10 @@ async def interview(
     #         else "No summary available."
     #     )
     #     return {"response": result.full_output, "is_done": True, "summary": summary}
-    response_audio = generate_audio_base64(interview_output.interviewer_output)
+    if isDeepgram:
+        response_audio = deepgram_tts.text_to_speech_base64(interview_output.interviewer_output)
+    else:
+        response_audio = generate_audio_base64(interview_output.interviewer_output)
 
     # View Chat History
     chat_history = session_histories[interview_input.session_id].messages
