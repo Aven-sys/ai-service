@@ -167,8 +167,9 @@ whisper_model = whisper.load_model("base")
 # Load Groq Transcription Service
 groq_transcription_client = GroqTranscriptionService()
 
-# Deep gram 
+# Deep gram
 deepgram_tts = DeepgramTTS(api_key=deepgram_api_key)
+
 
 async def transcript_audio(audio_file):
     # Read the audio file content from `UploadFile` and save it to a temporary file
@@ -205,7 +206,9 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
     interview_output = InterviewOutput(**json.loads(result.content))
 
     if isDeepgram:
-        response_audio = deepgram_tts.text_to_speech_base64(interview_output.interviewer_output)
+        response_audio = deepgram_tts.text_to_speech_base64(
+            interview_output.interviewer_output
+        )
     else:
         response_audio = generate_audio_base64(interview_output.interviewer_output)
 
@@ -218,37 +221,6 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
         response_audio=response_audio,
         chat_history=chat_history,
     )
-
-
-# @router.post("/interview")
-# async def interview(interview_input: InterviewInput):
-#     # Check if session exists
-#     if interview_input.session_id not in session_histories:
-#         raise HTTPException(status_code=404, detail="Session not found")
-
-#     # Retrieve and print the chat history to verify it's being retained
-#     history = session_histories[interview_input.session_id]
-#     print("Current chat history:", history)
-
-#     # Invoke the chain with user response and session history
-#     result = chain_with_history.invoke(
-#         {**interview_input.context},
-#         config={"configurable": {"session_id": interview_input.session_id}},
-#     )
-
-#     interview_output = InterviewOutput(**json.loads(result.content))
-#     print("Current chat history after user input:", result)
-
-#     # # Determine if interview is done based on `is_done` in result
-#     # if result.is_done:
-#     #     summary = (
-#     #         "Summary of the interview:\n" + result.summary
-#     #         if result.summary
-#     #         else "No summary available."
-#     #     )
-#     #     return {"response": result.full_output, "is_done": True, "summary": summary}
-
-#     return {"response": interview_output, "is_done": False}
 
 
 @router.post("/interview")
@@ -292,21 +264,19 @@ async def interview(
     interview_output = InterviewOutput(**json.loads(result.content))
     print("Current chat history after user input:", result)
 
-    # # Determine if interview is done based on `is_done` in result
-    # if result.is_done:
-    #     summary = (
-    #         "Summary of the interview:\n" + result.summary
-    #         if result.summary
-    #         else "No summary available."
-    #     )
-    #     return {"response": result.full_output, "is_done": True, "summary": summary}
     if isDeepgram:
-        response_audio = deepgram_tts.text_to_speech_base64(interview_output.interviewer_output)
+        response_audio = deepgram_tts.text_to_speech_base64(
+            interview_output.interviewer_output
+        )
     else:
         response_audio = generate_audio_base64(interview_output.interviewer_output)
 
     # View Chat History
     chat_history = session_histories[interview_input.session_id].messages
+
+    # Clear the session history if the interview is done
+    if interview_output.is_done:
+        del session_histories[interview_input.session_id]
 
     return InterviewStartResponseDto(
         session_id=session_id,
@@ -314,7 +284,6 @@ async def interview(
         response_audio=response_audio,
         chat_history=chat_history,
     )
-    # return {"response": interview_output, "is_done": False}
 
 
 # End the interview and retrieve the full history
