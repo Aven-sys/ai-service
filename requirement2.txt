@@ -1,6 +1,7 @@
 langchain
 langchain-community
 langchain-openai
+langchain-groq
 pandas
 fastapi[standard]
 nltk
@@ -14,3 +15,5 @@ transformers
 rank_bm25
 gTTS
 git+https://github.com/openai/whisper.git
+groq
+deepgram-sdk
