@@ -184,7 +184,7 @@ async def transcript_audio(audio_file):
     # Run Whisper transcription on the saved file
     transcription_result = whisper_model.transcribe("temp_audio.wav")
     transcription_text = transcription_result["text"]
-    print("Transcription:", transcription_text)
+    # print("Transcription:", transcription_text)
     return transcription_text
 
 
@@ -281,7 +281,7 @@ async def interview(
         del session_histories[interview_input.session_id]
 
     
-    print("Session: ", session_histories)
+    # print("Session: ", session_histories)
     return InterviewStartResponseDto(
         session_id=session_id,
         response=interview_output,
