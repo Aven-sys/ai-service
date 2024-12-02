@@ -47,9 +47,9 @@ class LLM:
         ]
 
         if self.model_name in openai_model_list:
-            return ChatOpenAI(model=self.model_name, temperature=0)
+            return ChatOpenAI(model=self.model_name, temperature=0.5)
         else:
-            return ChatOpenAI(model=self.model_name, temperature=0)
+            return ChatOpenAI(model=self.model_name, temperature=0.5)
 
     def initialize_prompt(self):
         # Initialize the prompt template, with an optional system prompt

@@ -29,3 +29,27 @@ class CandidateParsedDataDTO(BaseModel):
 class JobToCandidatesMatchingRequestDTO(BaseModel):
     candidatesData: List[CandidateParsedDataDTO]
     jobData: JobParsedDataDTO
+
+class JobParsedDataV2DTO(BaseModel):
+    jobTitle: Optional[str]
+    yearsOfExperience: Optional[int]
+    qualifications: Optional[List[str]] = []
+    skills: Optional[List[str]] = []
+    experienceRole: Optional[List[str]] = []
+    salary: Optional[str]
+    keyWords: Optional[List[str]] = []
+    location: Optional[str]
+
+class CandidateParsedDataV2DTO(BaseModel):
+    jobTitle: Optional[List[str]] = []
+    yearsOfExperience: Optional[int]
+    qualifications: Optional[List[str]] = []
+    skills: Optional[List[str]] = []
+    experienceRole: Optional[List[str]] = []
+    salary: Optional[str]
+    keyWords: Optional[List[str]] = []
+    location: Optional[str]
+
+class JobToCandidatesMatchingRequestV2DTO(BaseModel):
+    candidatesData: List[CandidateParsedDataV2DTO]
+    jobData: JobParsedDataV2DTO
