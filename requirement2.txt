@@ -17,3 +17,5 @@ gTTS
 git+https://github.com/openai/whisper.git
 groq
 deepgram-sdk
+webrtcvad
+websockets
