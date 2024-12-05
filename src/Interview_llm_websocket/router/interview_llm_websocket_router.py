@@ -44,8 +44,8 @@ import os
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
 # ========================= Flags =========================
-isUseGroq = False
-isDeepgram = False
+isUseGroq = True
+isDeepgram = True
 # ========================= Flags =========================
 
 router = APIRouter(
@@ -95,7 +95,7 @@ class InterviewStartResponseDto(BaseModel):
     response: InterviewOutput
     response_audio: Optional[str] = None
     chat_history: Optional[List[BaseMessage]] = None
-    type: str 
+    type: str
 
 
 # System prompt that includes all questions and instructions
@@ -174,19 +174,20 @@ groq_transcription_client = GroqTranscriptionService()
 # Deep gram
 deepgram_tts = DeepgramTTS(api_key=deepgram_api_key)
 
-# async def transcript_audio(audio_file):
-#     # Read the audio file content from `UploadFile` and save it to a temporary file
-#     audio_content = await audio_file.read()  # Read the audio data as bytes
 
-#     # Transcribe the audio data using Whisper
-#     with open("temp_audio.wav", "wb") as temp_audio_file:
-#         temp_audio_file.write(audio_content)
+async def transcript_audio(audio_file):
+    # Read the audio file content from `UploadFile` and save it to a temporary file
+    audio_content = await audio_file.read()  # Read the audio data as bytes
 
-#     # Run Whisper transcription on the saved file
-#     transcription_result = whisper_model.transcribe("temp_audio.wav")
-#     transcription_text = transcription_result["text"]
-#     # print("Transcription:", transcription_text)
-#     return transcription_text
+    # Transcribe the audio data using Whisper
+    with open("temp_audio.wav", "wb") as temp_audio_file:
+        temp_audio_file.write(audio_content)
+
+    # Run Whisper transcription on the saved file
+    transcription_result = whisper_model.transcribe("temp_audio.wav")
+    transcription_text = transcription_result["text"]
+    # print("Transcription:", transcription_text)
+    return transcription_text
 
 
 async def transcribe_audio(audio_data):
@@ -212,6 +213,10 @@ async def text_to_speech(interview_output: InterviewOutput):
     response_audio = generate_audio_base64(interview_output.interviewer_output)
 
 
+# Set Temp socket connection to store the session_id
+connections = {}
+
+
 @router.websocket("/ws/interview-chatbot")
 async def interview_chatbot(websocket: WebSocket):
     await websocket.accept()
@@ -234,6 +239,13 @@ async def interview_chatbot(websocket: WebSocket):
                                 **data["data"]
                             )
                             session_id = str(uuid4())
+
+                            # Associate the session ID with the WebSocket connection so that session ID do not need to be sent in every message
+                            connections[websocket] = {
+                                "session_id": session_id,
+                                "context": interview_start_request_dto.context,
+                            }
+
                             result = chain_with_history.invoke(
                                 {
                                     "input": "Let's start the interview",
@@ -241,6 +253,7 @@ async def interview_chatbot(websocket: WebSocket):
                                 },
                                 config={"configurable": {"session_id": session_id}},
                             )
+
                         interview_output = InterviewOutput(**json.loads(result.content))
                         chat_history = session_histories[session_id].messages
                         outResponse = InterviewStartResponseDto(
@@ -252,8 +265,15 @@ async def interview_chatbot(websocket: WebSocket):
                         )
                         await websocket.send_text(outResponse.model_dump_json())
                         # Generate TTS audio
-                        audio_data = generate_audio(interview_output.interviewer_output)
-        
+                        # audio_data = generate_audio(interview_output.interviewer_output)
+
+                        if isDeepgram:
+                            audio_data = deepgram_tts.text_to_speech(
+                                interview_output.interviewer_output
+                            )
+                        else:
+                            audio_data = generate_audio(interview_output.interviewer_output)
+
                         # Send binary audio data
                         await websocket.send_bytes(audio_data.read())
 
@@ -268,10 +288,57 @@ async def interview_chatbot(websocket: WebSocket):
                 binary_data = message["bytes"]
                 print(f"Received binary data: {len(binary_data)} bytes")
 
-                # Example: Save binary data to a file
-                with open("received_data.bin", "ab") as f:
+                audio_file_path = "received_audio.wav"
+
+                # Save the binary audio data to a file
+                with open(audio_file_path, "wb") as f:
                     f.write(binary_data)
 
+                # Transcription logic
+                if isUseGroq:
+                    transcription_text = groq_transcription_client.transcribe_audio(
+                        binary_data, "audio.wav"  # Filename is optional
+                    )
+                else:
+                    transcription_text = await transcribe_audio(binary_data)
+
+                # Get session ID and context from the WebSocket connection
+                session_id = connections[websocket]["session_id"]
+                context = connections[websocket]["context"]
+
+                context["input"] = transcription_text
+
+                # Check if session Id is in session_histories
+                if session_id not in session_histories:
+                    raise HTTPException(status_code=404, detail="Session not found")
+
+                result = chain_with_history.invoke(
+                    {**context},
+                    config={"configurable": {"session_id": session_id}},
+                )
+                interview_output = InterviewOutput(**json.loads(result.content))
+                chat_history = session_histories[session_id].messages
+                outResponse = InterviewStartResponseDto(
+                    session_id=session_id,
+                    response=interview_output,
+                    # response_audio=response_audio,
+                    chat_history=chat_history,
+                    type="interview_start_response",
+                )
+                await websocket.send_text(outResponse.model_dump_json())
+                
+                # Generate TTS audio
+                # audio_data = generate_audio(interview_output.interviewer_output)
+
+                if isDeepgram:
+                    audio_data = deepgram_tts.text_to_speech(
+                        interview_output.interviewer_output
+                    )
+                else:
+                    audio_data = generate_audio(interview_output.interviewer_output)
+
+                # Send binary audio data
+                await websocket.send_bytes(audio_data.read())
                 # Acknowledge receipt
                 await websocket.send_text("Binary data received successfully.")
             else:
