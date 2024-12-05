@@ -2,7 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain.memory import ChatMessageHistory, ConversationTokenBufferMemory, ConversationSummaryBufferMemory
 from langchain.memory.chat_memory import BaseChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage
 from langchain_core.exceptions import OutputParserException
 from langchain.output_parsers import PydanticOutputParser
 from datetime import date
