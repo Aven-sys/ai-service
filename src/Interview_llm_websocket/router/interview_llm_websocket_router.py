@@ -27,6 +27,7 @@ from ..util.interview_llm_util import generate_audio_base64, generate_audio
 import whisper
 from langchain_core.messages import BaseMessage
 import base64
+import struct
 
 # Groq
 from ..util.groq_llm_util import GroqTranscriptionService
@@ -208,9 +209,16 @@ async def generate_response(interview_input: InterviewInput):
     return result
 
 
-async def text_to_speech(interview_output: InterviewOutput):
-    """Convert text to speech using pyttsx3."""
-    response_audio = generate_audio_base64(interview_output.interviewer_output)
+def combine_audio_and_json(audio_bytes: bytes, json_metadata: dict) -> bytes:
+    # Serialize JSON metadata to a byte string
+    json_bytes = json.dumps(json_metadata).encode("utf-8")
+
+    # Get the length of the JSON bytes as a 4-byte little-endian integer
+    json_length = struct.pack("<I", len(json_bytes))  # Little-endian 4 bytes
+
+    # Combine JSON length, JSON bytes, and audio bytes
+    combined_bytes = json_length + json_bytes + audio_bytes
+    return combined_bytes
 
 
 # Set Temp socket connection to store the session_id
@@ -264,9 +272,8 @@ async def interview_chatbot(websocket: WebSocket):
                             type="interview_start_response",
                         )
                         await websocket.send_text(outResponse.model_dump_json())
-                        # Generate TTS audio
-                        # audio_data = generate_audio(interview_output.interviewer_output)
 
+                        # Generate TTS audio
                         if isDeepgram:
                             audio_data = deepgram_tts.text_to_speech(
                                 interview_output.interviewer_output
@@ -274,8 +281,16 @@ async def interview_chatbot(websocket: WebSocket):
                         else:
                             audio_data = generate_audio(interview_output.interviewer_output)
 
+
                         # Send binary audio data
-                        await websocket.send_bytes(audio_data.read())
+                        # await websocket.send_bytes(audio_data.read())
+
+                        # COmbined and sent the JSON and audio in bytes
+                        combined_bytes = combine_audio_and_json(
+                            audio_data.read(),
+                           outResponse.model_dump()
+                        )
+                        await websocket.send_bytes(combined_bytes)
 
                     else:
                         await websocket.send_text(
@@ -326,10 +341,8 @@ async def interview_chatbot(websocket: WebSocket):
                     type="interview_start_response",
                 )
                 await websocket.send_text(outResponse.model_dump_json())
-                
-                # Generate TTS audio
-                # audio_data = generate_audio(interview_output.interviewer_output)
 
+                # Generate TTS audio
                 if isDeepgram:
                     audio_data = deepgram_tts.text_to_speech(
                         interview_output.interviewer_output
