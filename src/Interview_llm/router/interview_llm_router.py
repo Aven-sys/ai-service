@@ -43,7 +43,7 @@ import os
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
 # ========================= Flags =========================
-isUseGroq = False
+isUseGroq = True
 isDeepgram = False
 # ========================= Flags =========================
 
