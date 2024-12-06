@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, File, UploadFile, Form, WebSocket
+from fastapi import APIRouter, HTTPException, File, UploadFile, Form, WebSocket, WebSocketDisconnect
 from common.util import pydantic_util
 from common.util.langchain_pydantic_model_generator import (
     print_pydantic_instance,
@@ -46,7 +46,7 @@ deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
 # ========================= Flags =========================
 isUseGroq = True
-isDeepgram = True
+isDeepgram = False
 # ========================= Flags =========================
 
 router = APIRouter(
@@ -264,14 +264,6 @@ async def interview_chatbot(websocket: WebSocket):
 
                         interview_output = InterviewOutput(**json.loads(result.content))
                         chat_history = session_histories[session_id].messages
-                        outResponse = InterviewStartResponseDto(
-                            session_id=session_id,
-                            response=interview_output,
-                            # response_audio=response_audio,
-                            chat_history=chat_history,
-                            type="interview_start_response",
-                        )
-                        await websocket.send_text(outResponse.model_dump_json())
 
                         # Generate TTS audio
                         if isDeepgram:
@@ -279,16 +271,27 @@ async def interview_chatbot(websocket: WebSocket):
                                 interview_output.interviewer_output
                             )
                         else:
-                            audio_data = generate_audio(interview_output.interviewer_output)
+                            audio_data = generate_audio(
+                                interview_output.interviewer_output
+                            )
 
+                        outResponse = InterviewStartResponseDto(
+                            session_id=session_id,
+                            response=interview_output,
+                            # response_audio=response_audio,
+                            chat_history=chat_history,
+                            type="interview_start_response",
+                        )
+
+                        # Send the response to the client
+                        # await websocket.send_text(outResponse.model_dump_json())
 
                         # Send binary audio data
                         # await websocket.send_bytes(audio_data.read())
 
                         # COmbined and sent the JSON and audio in bytes
                         combined_bytes = combine_audio_and_json(
-                            audio_data.read(),
-                           outResponse.model_dump()
+                            audio_data.read(), outResponse.model_dump()
                         )
                         await websocket.send_bytes(combined_bytes)
 
@@ -333,16 +336,8 @@ async def interview_chatbot(websocket: WebSocket):
                 )
                 interview_output = InterviewOutput(**json.loads(result.content))
                 chat_history = session_histories[session_id].messages
-                outResponse = InterviewStartResponseDto(
-                    session_id=session_id,
-                    response=interview_output,
-                    # response_audio=response_audio,
-                    chat_history=chat_history,
-                    type="interview_start_response",
-                )
-                await websocket.send_text(outResponse.model_dump_json())
 
-                # Generate TTS audio
+                                # Generate TTS audio
                 if isDeepgram:
                     audio_data = deepgram_tts.text_to_speech(
                         interview_output.interviewer_output
@@ -350,13 +345,59 @@ async def interview_chatbot(websocket: WebSocket):
                 else:
                     audio_data = generate_audio(interview_output.interviewer_output)
 
-                # Send binary audio data
-                await websocket.send_bytes(audio_data.read())
-                # Acknowledge receipt
-                await websocket.send_text("Binary data received successfully.")
+                outResponse = InterviewStartResponseDto(
+                    session_id=session_id,
+                    response=interview_output,
+                    # response_audio=response_audio,
+                    chat_history=chat_history,
+                    type="interview_start_response",
+                )
+
+                # Send the response to the client
+                # await websocket.send_text(outResponse.model_dump_json())
+
+                # # Send binary audio data
+                # await websocket.send_bytes(audio_data.read())
+                # # Acknowledge receipt
+                # await websocket.send_text("Binary data received successfully.")
+
+                # COmbined and sent the JSON and audio in bytes
+                combined_bytes = combine_audio_and_json(
+                    audio_data.read(), outResponse.model_dump()
+                )
+                await websocket.send_bytes(combined_bytes)
             else:
                 print("Unknown message type received.")
                 await websocket.send_text("Unknown message type.")
 
+    except WebSocketDisconnect:
+        print("WebSocket connection closed.")
+
+        # Clean up session data
+        if websocket in connections:
+            session_data = connections.pop(websocket, None)
+            if session_data:
+                session_id = session_data["session_id"]
+
+                # Remove session history
+                session_histories.pop(session_id, None)
+
+        print(f"Cleaned up session for WebSocket: {websocket}")
+
     except Exception as e:
-        print(f"WebSocket connection closed: {e}")
+        print(f"Error occurred: {e}")
+
+        print("WebSocket connection closed.")
+
+        # Clean up session data
+        if websocket in connections:
+            session_data = connections.pop(websocket, None)
+            if session_data:
+                session_id = session_data["session_id"]
+
+                # Remove session history
+                session_histories.pop(session_id, None)
+
+        print(f"Cleaned up session for WebSocket: {websocket}")
+        print("Connections:", connections)
+        print("Session Histories:", session_histories)
