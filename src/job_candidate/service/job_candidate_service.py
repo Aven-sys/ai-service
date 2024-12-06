@@ -247,8 +247,7 @@ def get_job_to_candidates_matching_v3(
     ordered_results = JobToCandidateMatchingListDTO(
         candidates = [result for index, result in sorted(results_with_indices)]
     )
-    # ordered_results = [result for index, result in sorted(results_with_indices)]
-    print("Ordered Results", ordered_results)
+
     # Optionally return results or process them further
     return ordered_results
 
