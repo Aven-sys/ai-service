@@ -1,12 +1,4 @@
-from fastapi import (
-    APIRouter,
-    HTTPException,
-    File,
-    UploadFile,
-    Form,
-    WebSocket,
-    WebSocketDisconnect,
-)
+from fastapi import APIRouter, HTTPException, File, UploadFile, Form, WebSocket, WebSocketDisconnect
 from common.util import pydantic_util
 from common.util.langchain_pydantic_model_generator import (
     print_pydantic_instance,
@@ -244,82 +236,6 @@ async def interview_chatbot(websocket: WebSocket):
             message = await websocket.receive()
 
             if "text" in message:  # JSON or text message
-                if message["text"] == "RESPONSE_END":
-                    print("End of response received.")
-                    # print ("1 - Connections: ", connections)
-
-                    audio_data = None
-                    # Get the audio Buffer array from connections[websocket]
-                    if websocket in connections:
-                        if "audio_buffer" in connections[websocket]:
-                            audio_data = bytes(connections[websocket]["audio_buffer"])
-
-                    # Save the binary audio data to a file
-                    # with open(audio_file_path, "wb") as f:
-                    #     f.write(binary_data)
-
-                    # Transcription logic
-                    if isUseGroq:
-                        transcription_text = groq_transcription_client.transcribe_audio(
-                            audio_data, "audio.wav"  # Filename is optional
-                        )
-                    else:
-                        transcription_text = await transcribe_audio(binary_data)
-
-                    # Get session ID and context from the WebSocket connection
-                    session_id = connections[websocket]["session_id"]
-                    context = connections[websocket]["context"]
-
-                    context["input"] = transcription_text
-
-                    # Check if session Id is in session_histories
-                    if session_id not in session_histories:
-                        raise HTTPException(status_code=404, detail="Session not found")
-
-                    result = chain_with_history.invoke(
-                        {**context},
-                        config={"configurable": {"session_id": session_id}},
-                    )
-                    interview_output = InterviewOutput(**json.loads(result.content))
-                    chat_history = session_histories[session_id].messages
-
-                    # Generate TTS audio
-                    if isDeepgram:
-                        audio_data = deepgram_tts.text_to_speech(
-                            interview_output.interviewer_output
-                        )
-                    else:
-                        audio_data = generate_audio(interview_output.interviewer_output)
-
-                    outResponse = InterviewStartResponseDto(
-                        session_id=session_id,
-                        response=interview_output,
-                        # response_audio=response_audio,
-                        chat_history=chat_history,
-                        type="interview_start_response",
-                    )
-
-                    # Send the response to the client
-                    # await websocket.send_text(outResponse.model_dump_json())
-
-                    # # Send binary audio data
-                    # await websocket.send_bytes(audio_data.read())
-                    # # Acknowledge receipt
-                    # await websocket.send_text("Binary data received successfully.")
-
-                    # COmbined and sent the JSON and audio in bytes
-                    combined_bytes = combine_audio_and_json(
-                        audio_data.read(), outResponse.model_dump()
-                    )
-                    await websocket.send_bytes(combined_bytes)
-
-                    # delete the audio_buffer from connections[websocket]
-                    if websocket in connections:
-                        if "audio_buffer" in connections[websocket]:
-                            del connections[websocket]["audio_buffer"]
-                    print("2 - Connections: ", connections)
-                    continue
-
                 try:
                     # Parse the text as JSON
                     data = json.loads(message["text"])
@@ -390,76 +306,66 @@ async def interview_chatbot(websocket: WebSocket):
                 binary_data = message["bytes"]
                 print(f"Received binary data: {len(binary_data)} bytes")
 
-                audio_chunk = message["bytes"]
-                print(f"Received audio chunk: {len(audio_chunk)} bytes")
+                audio_file_path = "received_audio.wav"
 
-                # check if connections[websocket]["audio_buffer"] exists, if not create it
-                if "audio_buffer" not in connections[websocket]:
-                    connections[websocket]["audio_buffer"] = bytearray()
+                # Save the binary audio data to a file
+                with open(audio_file_path, "wb") as f:
+                    f.write(binary_data)
 
-                # Append chunk to buffer
-                connections[websocket]["audio_buffer"].extend(audio_chunk)
+                # Transcription logic
+                if isUseGroq:
+                    transcription_text = groq_transcription_client.transcribe_audio(
+                        binary_data, "audio.wav"  # Filename is optional
+                    )
+                else:
+                    transcription_text = await transcribe_audio(binary_data)
 
-                # audio_file_path = "received_audio.wav"
+                # Get session ID and context from the WebSocket connection
+                session_id = connections[websocket]["session_id"]
+                context = connections[websocket]["context"]
 
-                # # Save the binary audio data to a file
-                # with open(audio_file_path, "wb") as f:
-                #     f.write(binary_data)
+                context["input"] = transcription_text
 
-                # # Transcription logic
-                # if isUseGroq:
-                #     transcription_text = groq_transcription_client.transcribe_audio(
-                #         binary_data, "audio.wav"  # Filename is optional
-                #     )
-                # else:
-                #     transcription_text = await transcribe_audio(binary_data)
+                # Check if session Id is in session_histories
+                if session_id not in session_histories:
+                    raise HTTPException(status_code=404, detail="Session not found")
 
-                # # Get session ID and context from the WebSocket connection
-                # session_id = connections[websocket]["session_id"]
-                # context = connections[websocket]["context"]
+                result = chain_with_history.invoke(
+                    {**context},
+                    config={"configurable": {"session_id": session_id}},
+                )
+                interview_output = InterviewOutput(**json.loads(result.content))
+                chat_history = session_histories[session_id].messages
 
-                # context["input"] = transcription_text
+                                # Generate TTS audio
+                if isDeepgram:
+                    audio_data = deepgram_tts.text_to_speech(
+                        interview_output.interviewer_output
+                    )
+                else:
+                    audio_data = generate_audio(interview_output.interviewer_output)
 
-                # # Check if session Id is in session_histories
-                # if session_id not in session_histories:
-                #     raise HTTPException(status_code=404, detail="Session not found")
+                outResponse = InterviewStartResponseDto(
+                    session_id=session_id,
+                    response=interview_output,
+                    # response_audio=response_audio,
+                    chat_history=chat_history,
+                    type="interview_start_response",
+                )
 
-                # result = chain_with_history.invoke(
-                #     {**context},
-                #     config={"configurable": {"session_id": session_id}},
-                # )
-                # interview_output = InterviewOutput(**json.loads(result.content))
-                # chat_history = session_histories[session_id].messages
+                # Send the response to the client
+                # await websocket.send_text(outResponse.model_dump_json())
 
-                #                 # Generate TTS audio
-                # if isDeepgram:
-                #     audio_data = deepgram_tts.text_to_speech(
-                #         interview_output.interviewer_output
-                #     )
-                # else:
-                #     audio_data = generate_audio(interview_output.interviewer_output)
+                # # Send binary audio data
+                # await websocket.send_bytes(audio_data.read())
+                # # Acknowledge receipt
+                # await websocket.send_text("Binary data received successfully.")
 
-                # outResponse = InterviewStartResponseDto(
-                #     session_id=session_id,
-                #     response=interview_output,
-                #     # response_audio=response_audio,
-                #     chat_history=chat_history,
-                #     type="interview_start_response",
-                # )
-
-                # # Send the response to the client
-                # # await websocket.send_text(outResponse.model_dump_json())
-
-                # # # Send binary audio data
-                # # await websocket.send_bytes(audio_data.read())
-                # # # Acknowledge receipt
-                # # await websocket.send_text("Binary data received successfully.")
-
-                # # COmbined and sent the JSON and audio in bytes
-                # combined_bytes = combine_audio_and_json(
-                #     audio_data.read(), outResponse.model_dump()
-                # )
-                # await websocket.send_bytes(combined_bytes)
+                # COmbined and sent the JSON and audio in bytes
+                combined_bytes = combine_audio_and_json(
+                    audio_data.read(), outResponse.model_dump()
+                )
+                await websocket.send_bytes(combined_bytes)
             else:
                 print("Unknown message type received.")
                 await websocket.send_text("Unknown message type.")
