@@ -276,3 +276,12 @@ Job Title: Docker Kub Country: American Samoa Job Type: Permanent Qualification:
     score = compare_documents_with_sentence_bm25(corpus[0], queries[0])
     print(score)
     # print("Normalized Score: ", sigmoid(score, alpha=1))
+
+# class jobDetail(BaseModel):
+#     jobTitle: str
+#     jobDescription: str
+#     jobQualification: str
+#     jobSkills: str
+#     jobCountry: str
+#     jobType: str
+#     jobLanguage: str
