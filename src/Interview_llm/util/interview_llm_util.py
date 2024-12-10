@@ -84,7 +84,7 @@ def generate_audio_base64(text: str, playback_rate: float = 1.0) -> str:
             process = (
                 ffmpeg.input("pipe:0")
                 .filter("atempo", playback_rate)
-                .output("pipe:1", format="mp3")
+                .output("pipe:1", format="wav")
                 .run(input=input_stream.read(), capture_stdout=True, capture_stderr=True)
             )
         except ffmpeg.Error as e:
