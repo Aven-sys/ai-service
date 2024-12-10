@@ -43,7 +43,7 @@ import os
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
 # ========================= Flags =========================
-isUseGroq = True
+isUseGroq = False
 isDeepgram = False
 # ========================= Flags =========================
 
@@ -164,7 +164,7 @@ chain_with_history = RunnableWithMessageHistory(
 )
 
 # Load whisper
-whisper_model = whisper.load_model("base")
+whisper_model = whisper.load_model("tiny.en")
 
 # Load Groq Transcription Service
 groq_transcription_client = GroqTranscriptionService()
@@ -212,7 +212,9 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
             interview_output.interviewer_output
         )
     else:
-        response_audio = generate_audio_base64(interview_output.interviewer_output)
+        response_audio = generate_audio_base64(
+            interview_output.interviewer_output, playback_rate=1.15
+        )
 
     # View Chat History
     chat_history = session_histories[session_id].messages
@@ -271,7 +273,9 @@ async def interview(
             interview_output.interviewer_output
         )
     else:
-        response_audio = generate_audio_base64(interview_output.interviewer_output)
+        response_audio = generate_audio_base64(
+            interview_output.interviewer_output, playback_rate=1.15
+        )
 
     # View Chat History
     chat_history = session_histories[interview_input.session_id].messages
@@ -280,7 +284,6 @@ async def interview(
     if interview_output.is_done:
         del session_histories[interview_input.session_id]
 
-    
     # print("Session: ", session_histories)
     return InterviewStartResponseDto(
         session_id=session_id,

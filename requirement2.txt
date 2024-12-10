@@ -19,3 +19,7 @@ groq
 deepgram-sdk
 webrtcvad
 websockets
+pydub 
+ffmpeg
+ffmpeg-python
+gunicorn
