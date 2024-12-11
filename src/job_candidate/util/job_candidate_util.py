@@ -13,8 +13,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 # Download NLTK stopwords (if not already available)
 import nltk
-# nltk.download('stopwords')
-# nltk.download('wordnet')
+nltk.download('stopwords')
+nltk.download('wordnet')
 
 # Initialize lemmatizer
 lemmatizer = WordNetLemmatizer()
@@ -35,9 +35,6 @@ def preprocess_text_words(text: str) -> str:
     return words
 
 def preprocess_text_sentences(text: str) -> List[str]:
-    # Lowercase, remove punctuation and stopwords, and lemmatize
-    # text = text.lower()
-    # text = re.sub(f"[{re.escape(string.punctuation)}]", "", text)
     sentences = nltk.sent_tokenize(text)
     return sentences
     # return [(sentence) for sentence in sentences]

@@ -7,6 +7,8 @@ from reranker.router import reranker_router
 from llm.router import llm_router
 from preprocess.router import preprocess_router
 from job_candidate.router import job_candidate_router
+from Interview_llm.router import interview_llm_router
+from Interview_llm_websocket.router import interview_llm_websocket_router
 
 # Initialize Fast API
 app = FastAPI()
@@ -26,6 +28,8 @@ app.include_router(reranker_router.router)
 app.include_router(llm_router.router)
 app.include_router(preprocess_router.router)
 app.include_router(job_candidate_router.router) 
+app.include_router(interview_llm_router.router)
+app.include_router(interview_llm_websocket_router.router)
 
 @app.get("/")
 async def first_api():
