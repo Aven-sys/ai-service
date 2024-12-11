@@ -12,9 +12,7 @@ from ..payload.request.job_to_candidates_matching_request_dto import (
 from ..util import job_candidate_util
 from common.util.langchain_pydantic_model_generator import print_pydantic_instance
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import nltk
 from typing import List
-import json
 
 # NO OORDER
 # def get_job_to_candidates_matching(
