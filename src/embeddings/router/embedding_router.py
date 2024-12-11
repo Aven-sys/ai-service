@@ -24,5 +24,4 @@ async def similarity_test(
    embedding_similarity_request_dto: EmbeddingSimilarityRequestDto 
 ):
     similarity = embedding_service.get_similarity(embedding_similarity_request_dto)
-    # print("Similarity: ", similarity) 
     return similarity

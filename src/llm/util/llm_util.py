@@ -51,21 +51,38 @@ class LLM:
         else:
             return ChatOpenAI(model=self.model_name, temperature=0.5)
 
+    # def initialize_prompt(self):
+    #     # Initialize the prompt template, with an optional system prompt
+    #     if self.prompt_type == "chat":
+    #         return ChatPromptTemplate([SystemMessage(content=self.system_prompt)])
+    #     else:
+    #         template_settings = {
+    #             "template": self.system_Prompt,
+    #             "input_variables": [key for key, value in self.input.items()],
+    #         }
+    #     # Conditionally add partial_variables if structured output is required
+    #     if self.is_structured_output:
+    #         template_settings["partial_variables"] = {
+    #             "format_instructions": self.parser.get_format_instructions()
+    #         }
+    #     return PromptTemplate(**template_settings)
+    
     def initialize_prompt(self):
-        # Initialize the prompt template, with an optional system prompt
+    # Initialize the prompt template, with an optional system prompt
         if self.prompt_type == "chat":
-            return ChatPromptTemplate([SystemMessage(content=self.system_prompt)])
+            self.prompt_template = ChatPromptTemplate([SystemMessage(content=self.system_Prompt)])
         else:
             template_settings = {
                 "template": self.system_Prompt,
                 "input_variables": [key for key, value in self.input.items()],
             }
-        # Conditionally add partial_variables if structured output is required
-        if self.is_structured_output:
-            template_settings["partial_variables"] = {
-                "format_instructions": self.parser.get_format_instructions()
-            }
-        return PromptTemplate(**template_settings)
+            # Conditionally add partial_variables if structured output is required
+            if self.is_structured_output:
+                template_settings["partial_variables"] = {
+                    "format_instructions": self.parser.get_format_instructions()
+                }
+            self.prompt_template = PromptTemplate(**template_settings)
+        return self.prompt_template
 
     def initialize_parser(self):
         # If structured output is required, configure the parser based on structure_output_config
@@ -91,6 +108,12 @@ class LLM:
 
     def run(self, input_data: Dict[str, str]) -> Any:
         chain = self.create_chain()
+
+        # Resolve and print the system prompt for debugging
+        resolved_prompt = self.prompt_template.format_prompt(**input_data).to_string()
+        print("Resolved System Prompt:")
+        print(resolved_prompt)
+
         response = chain.invoke(input_data)
         print_pydantic_instance(response)
         print(type(response))
