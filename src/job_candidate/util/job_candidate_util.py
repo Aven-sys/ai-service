@@ -314,7 +314,7 @@ def calculate_semantic_scores_chunk(job_data: List[str], candidate_data: List[st
 
     return GeneralMatchingResponse(matches=matched_pairs, overall_score=overall_score)
 
-def calculate_semantic_scores_batch(job_data: List[str], candidate_data: List[str], model_name: str = semantic_model_name) -> torch.Tensor:
+def calculate_semantic_scores_batch(job_data: List[str], candidate_data: List[str], threshold: float, model_name: str = semantic_model_name) -> torch.Tensor:
     if not job_data or not candidate_data:
         return GeneralMatchingResponse(matches=[], overall_score=0)
     
@@ -343,7 +343,7 @@ def calculate_semantic_scores_batch(job_data: List[str], candidate_data: List[st
     for i, job_item in enumerate(job_data):
         for j, candidate_item in enumerate(candidate_data):
             similarity = cosine_similarities[i][j].item()
-            if similarity >= 0.5:
+            if similarity >= threshold:
                 results.append(MatchResult(
                     source_item=job_item,
                     target_item=candidate_item,
@@ -358,19 +358,19 @@ def calculate_semantic_scores_batch(job_data: List[str], candidate_data: List[st
     return GeneralMatchingResponse(matches=results, overall_score=overall_score)
 
 def get_skills_matching_v2(job_skills: List[str], candidate_skills: List[str]) -> GeneralMatchingResponse: 
-    semantic_response = calculate_semantic_scores_batch(job_skills, candidate_skills, "paraphrase-MiniLM-L3-v2")
+    semantic_response = calculate_semantic_scores_batch(job_skills, candidate_skills, 0.5, "paraphrase-MiniLM-L3-v2")
     return semantic_response
 
 def get_job_title_matching(job_title: List[str], candidate_job_title: List[str]) -> GeneralMatchingResponse:
-    semantic_response = calculate_semantic_scores_batch(job_title, candidate_job_title, "paraphrase-MiniLM-L3-v2")
+    semantic_response = calculate_semantic_scores_batch(job_title, candidate_job_title, 0.5, "paraphrase-MiniLM-L3-v2")
     return semantic_response
 
 def get_location_matching(job_location: List[str], candidate_location: List[str]) -> GeneralMatchingResponse:
-    semantic_response = calculate_semantic_scores_batch(job_location, candidate_location, "paraphrase-MiniLM-L3-v2")
+    semantic_response = calculate_semantic_scores_batch(job_location, candidate_location, 0.70, "paraphrase-MiniLM-L3-v2")
     return semantic_response
 
 def get_keyword_matching(job_keywords: List[str], candidate_keywords: List[str]) -> GeneralMatchingResponse:
-    semantic_response = calculate_semantic_scores_batch(job_keywords, candidate_keywords, "paraphrase-MiniLM-L3-v2")
+    semantic_response = calculate_semantic_scores_batch(job_keywords, candidate_keywords, 0.5, "paraphrase-MiniLM-L3-v2")
     return semantic_response
 
 def get_salary_matching(job_salary: str, candidate_salary: str) -> GeneralMatchingResponse:
@@ -425,9 +425,9 @@ def get_years_experience_matching(job_years_of_experience: int, candidate_years_
     return GeneralMatchingResponse(matches=matches, overall_score=overall_score)
 
 def get_experience_matching(job_experience: List[str], candidate_experience: List[str]) -> GeneralMatchingResponse:
-    semantic_response = calculate_semantic_scores_batch(job_experience, candidate_experience, "paraphrase-MiniLM-L3-v2")
+    semantic_response = calculate_semantic_scores_batch(job_experience, candidate_experience, 0.5, "paraphrase-MiniLM-L3-v2")
     return semantic_response
 
 def get_qualification_matching(job_qualifications: List[str], candidate_qualifications: List[str]) -> GeneralMatchingResponse:
-    semantic_response = calculate_semantic_scores_batch(job_qualifications, candidate_qualifications, "paraphrase-MiniLM-L3-v2")
+    semantic_response = calculate_semantic_scores_batch(job_qualifications, candidate_qualifications, 0.5, "paraphrase-MiniLM-L3-v2")
     return semantic_response
