@@ -53,3 +53,7 @@ class CandidateParsedDataV2DTO(BaseModel):
 class JobToCandidatesMatchingRequestV2DTO(BaseModel):
     candidatesData: List[CandidateParsedDataV2DTO]
     jobData: JobParsedDataV2DTO
+
+class CandidateToJobsMatchingRequestDTO(BaseModel):
+    jobsData: List[JobParsedDataV2DTO]
+    candidateData: CandidateParsedDataV2DTO
