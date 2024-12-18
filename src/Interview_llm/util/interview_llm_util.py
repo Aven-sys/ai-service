@@ -20,6 +20,8 @@ from gtts import gTTS
 from io import BytesIO
 import base64
 import ffmpeg
+import tempfile
+import pycountry
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
@@ -66,7 +68,7 @@ def generate_audio(text: str) -> BytesIO:
 
 #     return audio_base64
 
-def generate_audio_base64(text: str, playback_rate: float = 1.0) -> str:
+def generate_audio_base64(text: str, playback_rate: float = 1.0,) -> str:
     try:
         # Step 1: Generate the audio file using gTTS
         audio_file = BytesIO()
@@ -102,3 +104,70 @@ def generate_audio_base64(text: str, playback_rate: float = 1.0) -> str:
         # General error handling
         print(f"An error occurred: {e}")
         raise  # Reraise the exception after logging
+
+def generate_audio_base64_file(text: str, playback_rate: float = 1.0,  language: str = 'english') -> str:
+    try:
+        # Step 1: Convert language name to code dynamically
+        language_code = get_language_code(language)
+
+        # Step 1: Generate gTTS output to a temporary file
+        temp_input = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        temp_output = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        try:
+            temp_input.close()  # Close to avoid permission errors on Windows
+            temp_output.close()
+
+            # Generate gTTS audio and save to temp_input file
+            gTTS(text=text, lang=language_code).save(temp_input.name)
+
+            # Step 2: Adjust playback rate using FFmpeg
+            if playback_rate != 1.0:
+                (
+                    ffmpeg.input(temp_input.name)
+                    .filter("atempo", str(playback_rate))
+                    .output(temp_output.name, format="wav")
+                    .overwrite_output()
+                    .run(quiet=True)
+                )
+                output_file = temp_output.name
+            else:
+                output_file = temp_input.name  # Use input directly if no speed adjustment
+
+            # Step 3: Read the processed WAV file and encode to Base64
+            with open(output_file, "rb") as f:
+                audio_base64 = base64.b64encode(f.read()).decode("utf-8")
+
+            return audio_base64
+
+        finally:
+            # Step 4: Cleanup temporary files
+            os.unlink(temp_input.name)  # Delete temp input file
+            os.unlink(temp_output.name)  # Delete temp output file
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        raise
+
+
+def get_language_code(language_name: str) -> str:
+    """
+    Convert a language name to its ISO 639-1 language code or gTTS-specific code.
+    Supports variants for Chinese.
+    """
+    try:
+        language_name_lower = language_name.lower()
+        
+        # Special handling for Chinese
+        if "chinese" in language_name_lower:
+            if "simplified" in language_name_lower or "cn" in language_name_lower:
+                return "zh-cn"  # Simplified Chinese
+            elif "traditional" in language_name_lower or "tw" in language_name_lower:
+                return "zh-tw"  # Traditional Chinese
+            else:
+                return "zh"  # Default to zh if no variant specified
+        
+        # General lookup for other languages
+        language = pycountry.languages.lookup(language_name)
+        return language.alpha_2  # Return ISO 639-1 code
+    except LookupError:
+        raise ValueError(f"Unsupported language: {language_name}. Please provide a valid language name.")

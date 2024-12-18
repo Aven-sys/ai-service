@@ -23,7 +23,7 @@ from uuid import uuid4
 from ..util.session_histories_util import get_session_history, session_histories
 from langchain_core.runnables.history import RunnableWithMessageHistory
 import json
-from ..util.interview_llm_util import generate_audio_base64
+from ..util.interview_llm_util import generate_audio_base64, generate_audio_base64_file
 import whisper
 from langchain_core.messages import BaseMessage
 
@@ -39,6 +39,7 @@ from ..payload.request.llm_chat_request_dto import LLMChatRequestDto
 
 from dotenv import load_dotenv
 import os
+import time
 
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
@@ -113,6 +114,8 @@ class InterviewStartResponseDto(BaseModel):
 system_prompt = """
 You are an interviewer conducting a structured interview. Your task is to engage the interviewee in a professional and polite manner, asking one question at a time and waiting for their response before proceeding. Follow these steps:
 
+Language: Conduct the interview in the specified language: **Chinese simplified**
+
 Greeting: Start by greeting the interviewee politely.
 
 Interview Questions: Begin the interview by asking the provided questions:
@@ -164,7 +167,8 @@ chain_with_history = RunnableWithMessageHistory(
 )
 
 # Load whisper
-whisper_model = whisper.load_model("tiny.en")
+# whisper_model = whisper.load_model("tiny.en")
+whisper_model = whisper.load_model("tiny")
 
 # Load Groq Transcription Service
 groq_transcription_client = GroqTranscriptionService()
@@ -226,28 +230,34 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
         chat_history=chat_history,
     )
 
-
 @router.post("/interview")
 async def interview(
     audio_file: UploadFile = File(...),
     session_id: str = Form(...),
     context: str = Form(...),
 ):
+    start_time_total = time.time()  # Start total time tracking
+
     # Parse JSON `context` string to a Python dictionary
+    start_time_parse = time.time()
     context_dict = json.loads(context)
+    parse_duration = time.time() - start_time_parse
+    print(f"Time taken for parsing input context: {parse_duration:.4f} seconds")
 
     # Create `InterviewInput` model manually with parsed data
     interview_input = InterviewInput(session_id=session_id, context=context_dict)
 
+    # Speech-to-Text Step
+    start_time_stt = time.time()
     if isUseGroq:
-        # transcript audio (Groq)
         file_content = await audio_file.read()
         transcription_text = groq_transcription_client.transcribe_audio(
             file_content, audio_file.filename
         )
     else:
-        # transcript audio (Normal)
         transcription_text = await transcript_audio(audio_file)
+    stt_duration = time.time() - start_time_stt
+    print(f"Time taken for Speech-to-Text (STT): {stt_duration:.4f} seconds")
 
     interview_input.context["input"] = transcription_text
 
@@ -255,28 +265,38 @@ async def interview(
     if interview_input.session_id not in session_histories:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Retrieve and print the chat history to verify it's being retained
-    history = session_histories[interview_input.session_id]
-    # print("Current chat history:", history)
-
-    # Invoke the chain with user response and session history
+    # LLM Call Step
+    start_time_llm = time.time()
     result = chain_with_history.invoke(
         {**interview_input.context},
         config={"configurable": {"session_id": interview_input.session_id}},
     )
+    llm_duration = time.time() - start_time_llm
+    print(f"Time taken for LLM call: {llm_duration:.4f} seconds")
 
     interview_output = InterviewOutput(**json.loads(result.content))
-    # print("Current chat history after user input:", result)
 
-    if isDeepgram:
-        response_audio = deepgram_tts.text_to_speech_base64(
-            interview_output.interviewer_output
-        )
-    else:
-        response_audio = generate_audio_base64(
-            interview_output.interviewer_output, playback_rate=1.15
-        )
+    # Text-to-Speech Step
+    # start_time_tts = time.time()
+    # if isDeepgram:
+    #     response_audio = deepgram_tts.text_to_speech_base64(
+    #         interview_output.interviewer_output
+    #     )
+    # else:
+    #     response_audio = generate_audio_base64(
+    #         interview_output.interviewer_output, playback_rate=1.15
+    #     )
+    # tts_duration = time.time() - start_time_tts
+    # print(f"Time taken for Text-to-Speech (TTS): {tts_duration:.4f} seconds")
 
+    ## Test generate_audio_base64_file see which is faster. ByteIO or File***
+    start_time_tts_file = time.time()
+    response_audio = generate_audio_base64_file(
+        interview_output.interviewer_output, playback_rate=1.15, language="Chinese simplified"
+    )
+    tts_duration_file = time.time() - start_time_tts_file
+    print(f"Time taken for Text-to-Speech (TTS) with File: {tts_duration_file:.4f} seconds")
+    
     # View Chat History
     chat_history = session_histories[interview_input.session_id].messages
 
@@ -284,7 +304,10 @@ async def interview(
     if interview_output.is_done:
         del session_histories[interview_input.session_id]
 
-    # print("Session: ", session_histories)
+    total_duration = time.time() - start_time_total
+    print(f"Total time taken for the request: {total_duration:.4f} seconds")
+
+    # Return response
     return InterviewStartResponseDto(
         session_id=session_id,
         response=interview_output,

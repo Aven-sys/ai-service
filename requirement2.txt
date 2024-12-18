@@ -23,3 +23,4 @@ pydub
 ffmpeg
 ffmpeg-python
 gunicorn
+pycountry
