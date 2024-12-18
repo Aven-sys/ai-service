@@ -24,3 +24,5 @@ ffmpeg
 ffmpeg-python
 gunicorn
 pycountry
+torchaudio
+coqui-tts

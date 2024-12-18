@@ -11,6 +11,11 @@ import ffmpeg
 import tempfile
 import pycountry
 import time
+import torchaudio
+import tempfile
+import torch
+from TTS.api import TTS
+import numpy as np
 
 text = """
   Technology has transformed the way we connect, learn, and create. From instant communication to limitless access to knowledge, the digital age has opened new horizons for innovation and collaboration. As we navigate this ever-evolving landscape, it's essential to strike a balance between embracing progress and preserving the human touch that keeps us grounded. Together, we can harness the power of technology to build a more inclusive and sustainable future.
@@ -128,6 +133,87 @@ def get_language_code(language_name: str) -> str:
         )
 
 
+## ================= Coqui TTS =================
+# Get device
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# List available 🐸TTS models
+print(TTS().list_models())
+
+# Initialize TTS
+# xtts_v2
+# coqtts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+# vi
+coqtts = TTS("tts_models/en/ljspeech/vits").to(device)
+
+# List speakers
+print(coqtts.speakers)
+## ================= Coqui TTS =================
+def generate_audio_base64_mixed(text: str, playback_rate=1.0) -> str:
+    """
+    Generate Base64-encoded WAV audio from input text using FFmpeg.
+
+    Args:
+        text (str): Text to synthesize into speech.
+
+    Returns:
+        str: Base64-encoded audio in WAV format.
+    """
+    try:
+        # raw_audio = coqtts.tts(
+        # text=text,
+        # language="en",
+        # speaker="Craig Gutsy",
+        # )
+
+        raw_audio = coqtts.tts(
+            text=text,
+            # speaker="VCTK_p225",
+            # language="en",
+        )
+        
+
+        # Convert raw audio (float32) to 16-bit PCM
+        # int16_audio = (np.array(raw_audio) * 32767).astype(np.int16)
+        # audio_bytes = int16_audio.tobytes()
+
+        # # Prepare input and output buffers for FFmpeg
+        # input_buffer = BytesIO(audio_bytes)
+        # output_buffer = BytesIO()
+
+        # # Ensure the buffer is at the beginning
+        # input_buffer.seek(0)
+
+        # # Use FFmpeg to adjust playback rate and output WAV format
+        # process = (
+        #     ffmpeg.input(
+        #         "pipe:0", format="s16le", ac=1, ar="22050"
+        #     )  # 16-bit PCM, mono, 22.05 kHz
+        #     .filter("atempo", playback_rate)
+        #     .output("pipe:1", format="wav")
+        #     .run(input=input_buffer.read(), capture_stdout=True, capture_stderr=True)
+        # )
+
+        # # Write FFmpeg's output to a buffer
+        # output_buffer.write(process[0])
+        # output_buffer.seek(0)
+
+        # # Encode the audio to Base64
+        # audio_base64 = base64.b64encode(output_buffer.read()).decode("utf-8")
+
+        # return audio_base64
+        return None
+
+
+    except ffmpeg.Error as e:
+        error_message = e.stderr.decode("utf-8") if e.stderr else "Unknown FFmpeg error"
+        raise RuntimeError(f"FFmpeg processing error: {error_message}")
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        raise
+
+
 # ====================================== Main function ==============================================
 if __name__ == "__main__":
     start_time_total = time.time()  # Start total time tracking
@@ -147,3 +233,14 @@ if __name__ == "__main__":
     )
     tts_duration = time.time() - start_time_tts
     print(f"Time taken for Text-to-Speech (TTS): {tts_duration:.4f} seconds")
+
+ ## Test generate_audio_base64_file see which is faster. ByteIO or File***
+    start_time_tts_coqui = time.time()
+    response_audio = generate_audio_base64_mixed(
+        text, playback_rate=1.15
+    )
+    tts_duration_coqui  = time.time() - start_time_tts_coqui 
+    print(f"Time taken for Text-to-Speech (TTS): {tts_duration_coqui:.4f} seconds")
+
+    total_duration = time.time() - start_time_total  # Calculate total time taken
+    print(f"Total time taken: {total_duration:.4f} seconds")
