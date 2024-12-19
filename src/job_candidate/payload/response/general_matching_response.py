@@ -33,3 +33,6 @@ class JobToCandidateMatchingDTO(BaseModel):
 
 class JobToCandidateMatchingListDTO(BaseModel):
     candidates: Optional[List[JobToCandidateMatchingDTO]] = None
+
+class CandidateToJobMatchingListDTO(BaseModel):
+    jobs: Optional[List[JobToCandidateMatchingDTO]] = None
