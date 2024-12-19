@@ -114,7 +114,7 @@ class InterviewStartResponseDto(BaseModel):
 system_prompt = """
 You are an interviewer conducting a structured interview. Your task is to engage the interviewee in a professional and polite manner, asking one question at a time and waiting for their response before proceeding. Follow these steps:
 
-Language: Conduct the interview in the specified language: **Chinese simplified**
+Language: Conduct the interview in the specified language: **{language}**
 
 Greeting: Start by greeting the interviewee politely.
 
@@ -211,14 +211,20 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
 
     interview_output = InterviewOutput(**json.loads(result.content))
 
-    if isDeepgram:
-        response_audio = deepgram_tts.text_to_speech_base64(
-            interview_output.interviewer_output
-        )
-    else:
-        response_audio = generate_audio_base64(
-            interview_output.interviewer_output, playback_rate=1.15
-        )
+    # if isDeepgram:
+    #     response_audio = deepgram_tts.text_to_speech_base64(
+    #         interview_output.interviewer_output
+    #     )
+    # else:
+    #     response_audio = generate_audio_base64(
+    #         interview_output.interviewer_output, playback_rate=1.15
+    #     )
+
+    response_audio = generate_audio_base64_file(
+        interview_output.interviewer_output,
+        playback_rate=1.15,
+        language=interview_start_request_dto.context["language"],
+    )
 
     # View Chat History
     chat_history = session_histories[session_id].messages
@@ -229,6 +235,7 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
         response_audio=response_audio,
         chat_history=chat_history,
     )
+
 
 @router.post("/interview")
 async def interview(
@@ -292,11 +299,15 @@ async def interview(
     ## Test generate_audio_base64_file see which is faster. ByteIO or File***
     start_time_tts_file = time.time()
     response_audio = generate_audio_base64_file(
-        interview_output.interviewer_output, playback_rate=1.15, language="Chinese simplified"
+        interview_output.interviewer_output,
+        playback_rate=1.15,
+        language=interview_input.context["language"],
     )
     tts_duration_file = time.time() - start_time_tts_file
-    print(f"Time taken for Text-to-Speech (TTS) with File: {tts_duration_file:.4f} seconds")
-    
+    print(
+        f"Time taken for Text-to-Speech (TTS) with File: {tts_duration_file:.4f} seconds"
+    )
+
     # View Chat History
     chat_history = session_histories[interview_input.session_id].messages
 
