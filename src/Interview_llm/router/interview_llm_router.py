@@ -23,7 +23,11 @@ from uuid import uuid4
 from ..util.session_histories_util import get_session_history, session_histories
 from langchain_core.runnables.history import RunnableWithMessageHistory
 import json
-from ..util.interview_llm_util import generate_audio_base64, generate_audio_base64_file, generate_audio_base64_file_gg
+from ..util.interview_llm_util import (
+    generate_audio_base64,
+    generate_audio_base64_file,
+    generate_audio_base64_file_gg,
+)
 import whisper
 from langchain_core.messages import BaseMessage
 
@@ -45,7 +49,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
 # ========================= Flags =========================
-isUseGroq = False
+isUseGroq = True
 isDeepgram = False
 # ========================= Flags =========================
 
@@ -112,12 +116,48 @@ class InterviewStartResponseDto(BaseModel):
 # {format_instructions}
 # """
 
+## OPEN AI
+# system_prompt = """
+# You are an interviewer conducting a structured interview. Your task is to engage the interviewee in a professional and polite manner, asking one question at a time and waiting for their response before proceeding. Follow these steps:
+
+# Language: Conduct the interview in the specified language: **{language}**
+
+# Greeting: Start by greeting the interviewee politely and ask the first question.
+
+# Interview Questions: Begin the interview by asking the provided questions:
+
+# {interview_questions}
+
+# Ask each question one at a time. After receiving an answer, provide brief and constructive feedback (if appropriate) before moving to the next question.
+# If the interviewees does not provide an appropriate response after 3 tries, proceed on with the interview.
+
+# If only one question is provided, ask that question and wait for the response.
+
+# Wrapping Up: Once all the questions have been answered:
+
+# Ask the interviewee if they have anything to add.
+# Summarize the interview by restating the key points discussed and confirm with the interviewee if all the information provided is accurate.
+# Ending the Interview:
+
+# If the interviewee confirms that the information is accurate, thank them for their participation and end the interview.
+# Only set is_done to True once the interview is fully completed, and no further input from the interviewee is expected.
+
+# Please only return in response JSON valid format. Below is the schema for the JSON output.
+# 1. **Ensure proper JSON syntax**:
+#    - Use double quotes (`"`) for all keys and string values.
+#    - Do not include extra characters, comments, or formatting outside the JSON.
+# {format_instructions}
+# """
+
+## LAMA 3.1
 system_prompt = """
 You are an interviewer conducting a structured interview. Your task is to engage the interviewee in a professional and polite manner, asking one question at a time and waiting for their response before proceeding. Follow these steps:
 
 Language: Conduct the interview in the specified language: **{language}**
 
-Greeting: Start by greeting the interviewee politely.
+Greeting: Start by greeting the interviewee politely and ask the first question together with the greetings in the same message..
+
+Always ask the question in the interviewer_output field and wait for the interviewee's response before proceeding.
 
 Interview Questions: Begin the interview by asking the provided questions:
 
@@ -125,6 +165,10 @@ Interview Questions: Begin the interview by asking the provided questions:
 
 Ask each question one at a time. After receiving an answer, provide brief and constructive feedback (if appropriate) before moving to the next question.
 If the interviewees does not provide an appropriate response after 3 tries, proceed on with the interview.
+
+Do not ask extra questions or provide additional information. Only ask the interview questions provided. 
+
+Always end your response with the question to keep the conversation flowing.
 
 If only one question is provided, ask that question and wait for the response.
 
@@ -137,11 +181,55 @@ Ending the Interview:
 If the interviewee confirms that the information is accurate, thank them for their participation and end the interview.
 Only set is_done to True once the interview is fully completed, and no further input from the interviewee is expected.
 
+Please only return in response JSON valid format. Below is the schema for the JSON output.
+1. **Ensure proper JSON syntax**:
+   - Use double quotes (`"`) for all keys and string values.
+   - Do not include extra characters, comments, or formatting outside the JSON.
 {format_instructions}
 """
 
+# schema_text = """
+# {
+#     "interviewer_output": "string",
+#     "question": "string or null",
+#     "answer": "string or null",
+#     "is_done": "boolean",
+#     "summary": "string or null",
+#     "chat_history": "string or null"
+# }
+# """
+
+# system_prompt = """
+# You are an interviewer conducting a structured interview. Your task is to engage the interviewee in a professional and polite manner, asking one question at a time and waiting for their response before proceeding. Follow these steps:
+
+# Language: Conduct the interview in the specified language: **{language}**
+
+# Greeting: Start by greeting the interviewee politely.
+
+# Interview Questions: Begin the interview by asking the provided questions:
+
+# {interview_questions}
+
+# Ask each question one at a time. After receiving an answer, provide brief and constructive feedback (if appropriate) before moving to the next question.
+# If the interviewees does not provide an appropriate response after 3 tries, proceed on with the interview.
+
+# If only one question is provided, ask that question and wait for the response.
+
+# Wrapping Up: Once all the questions have been answered:
+
+# Ask the interviewee if they have anything to add.
+# Summarize the interview by restating the key points discussed and confirm with the interviewee if all the information provided is accurate.
+# Ending the Interview:
+
+# If the interviewee confirms that the information is accurate, thank them for their participation and end the interview.
+# Only set is_done to True once the interview is fully completed, and no further input from the interviewee is expected.
+# """
+
 # Initialize the parser
-parser = PydanticOutputParser(pydantic_object=InterviewOutput)
+# parser = PydanticOutputParser(pydantic_object=InterviewOutput)
+
+# # Generate format instructions to guide the LLM
+# format_instructions = parser.get_format_instructions()
 
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -150,11 +238,19 @@ prompt = ChatPromptTemplate.from_messages(
         ("human", "{input}"),
     ]
 )
-prompt = prompt.partial(format_instructions=parser.get_format_instructions())
+# prompt = prompt.partial(format_instructions=parser.get_format_instructions())
+prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
 
 # Initialize the LLM
 # llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+# llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+# llm = llm.with_structured_output(InterviewOutput.model_json_schema())
+llm = ChatGroq(
+    model="llama-3.1-8b-instant",  # Specify the desired model
+    temperature=0.3,  # Set the temperature as needed
+)
+
+# print("model_json_schema:", InterviewOutput.model_json_schema())
 
 # Combine the prompt, LLM, and parser into a chain
 # chain = prompt | llm | parser
@@ -194,6 +290,47 @@ async def transcript_audio(audio_file):
     return transcription_text
 
 
+def parse_llm_output(raw_content: str):
+    try:
+        # Clean the raw content by removing backticks and formatting
+        if raw_content.startswith("```json"):
+            raw_content = raw_content.strip("```json\n").strip("\n```")
+
+        # Parse the JSON
+        parsed_data = json.loads(raw_content)
+
+        # Convert to Pydantic model
+        return InterviewOutput(**parsed_data)
+    except json.JSONDecodeError as e:
+        print("JSON Decode Error:", e)
+        raise ValueError("Failed to parse LLM output as JSON.")
+
+
+def clean_chat_history(chat_history):
+    """
+    Cleans the content of all messages in the chat history by stripping unwanted formatting.
+
+    Args:
+        chat_history (list): A list of HumanMessage or AIMessage objects.
+
+    Returns:
+        list: A list of cleaned HumanMessage or AIMessage objects.
+    """
+
+    def clean_content(raw_content: str) -> str:
+        if raw_content.startswith("```json"):
+            return raw_content.lstrip("```json\n").rstrip("\n```")
+        return raw_content
+
+    cleaned_history = []
+    for message in chat_history:
+        if hasattr(message, "content"):
+            message.content = clean_content(message.content)
+        cleaned_history.append(message)
+
+    return cleaned_history
+
+
 @router.post("/start-interview")
 async def start_interview(interview_start_request_dto: InterviewStartRequestDto):
     session_id = str(uuid4())
@@ -210,8 +347,17 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
         config={"configurable": {"session_id": session_id}},
     )
     # print("Result:", result)
+    # print("Result type:", type(result))
+    # print("Result content:", result.content)
 
-    interview_output = InterviewOutput(**json.loads(result.content))
+    # Only for Gemini Model
+    interview_output = parse_llm_output(result.content)
+
+    # Lama Model
+    # interview_output = InterviewOutput(**json.loads(result.content))
+
+    # Open AI
+    # interview_output = InterviewOutput(**json.loads(result.content))
 
     # if isDeepgram:
     #     response_audio = deepgram_tts.text_to_speech_base64(
@@ -224,12 +370,15 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
 
     response_audio = generate_audio_base64_file_gg(
         interview_output.interviewer_output,
-        playback_rate=1.15,
+        playback_rate=1.0,
         language=interview_start_request_dto.context["language"],
     )
 
     # View Chat History
     chat_history = session_histories[session_id].messages
+    # print("Chat History:", chat_history)
+    # Gemini Model
+    # clean_chat_history(chat_history)
 
     return InterviewStartResponseDto(
         session_id=session_id,
@@ -283,7 +432,13 @@ async def interview(
     llm_duration = time.time() - start_time_llm
     print(f"Time taken for LLM call: {llm_duration:.4f} seconds")
 
-    interview_output = InterviewOutput(**json.loads(result.content))
+    # interview_output = InterviewOutput(**json.loads(result.content))
+
+    # Gemini Model
+    interview_output = parse_llm_output(result.content)
+
+    # Lama Model
+    # interview_output = InterviewOutput(**json.loads(result.content))
 
     # Text-to-Speech Step
     # start_time_tts = time.time()
@@ -302,7 +457,7 @@ async def interview(
     start_time_tts_file = time.time()
     response_audio = generate_audio_base64_file_gg(
         interview_output.interviewer_output,
-        playback_rate=1.15,
+        playback_rate=1.0,
         language=interview_input.context["language"],
     )
     tts_duration_file = time.time() - start_time_tts_file
@@ -312,6 +467,9 @@ async def interview(
 
     # View Chat History
     chat_history = session_histories[interview_input.session_id].messages
+
+    # Gemini Model
+    clean_chat_history(chat_history)
 
     # Clear the session history if the interview is done
     if interview_output.is_done:

@@ -195,7 +195,7 @@ def generate_audio_base64_file_gg(text: str, playback_rate: float = 1.0, languag
             voice = texttospeech.VoiceSelectionParams(
                 language_code=language_code,
                 ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL,
-                name=f"{language_code}-Standard-A"  # Use standard voice
+                name=f"{language_code}-Standard-C"  # Use standard voice
             )
 
             # Select the audio configuration
