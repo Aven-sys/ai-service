@@ -270,3 +270,86 @@ def get_language_code_gg(language_name: str) -> str:
         return language_map[language_name_lower]
 
     raise ValueError(f"Unsupported language: {language_name}. Please provide a valid language name.")
+
+async def generate_audio_base64_stream(
+    llm_stream, playback_rate: float = 1.0, language: str = "english"
+):
+    """
+    Streams LLM response into Google Cloud TTS and encodes audio as Base64.
+    Args:
+        llm_stream: Async generator yielding LLM response chunks.
+        playback_rate: Playback speed adjustment (default is 1.0).
+        language: Language for TTS synthesis.
+    Returns:
+        Async generator yielding Base64-encoded audio chunks.
+    """
+    try:
+        # Step 1: Convert language name to Google Cloud language code
+        language_code = get_language_code_gg(language)
+
+        # Create a Text-to-Speech client
+        client = texttospeech.TextToSpeechClient()
+
+        # Configure TTS parameters
+        voice = texttospeech.VoiceSelectionParams(
+            language_code=language_code,
+            ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL,
+            name=f"{language_code}-Standard-C",  # Use standard voice
+        )
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.LINEAR16
+        )
+
+        async for llm_chunk in llm_stream:
+            text_chunk = llm_chunk.get("text", "").strip()
+            if not text_chunk:
+                continue  # Skip empty chunks
+
+            # Set the text input to be synthesized
+            synthesis_input = texttospeech.SynthesisInput(text=text_chunk)
+
+            # Perform the text-to-speech request
+            response = client.synthesize_speech(
+                input=synthesis_input, voice=voice, audio_config=audio_config
+            )
+
+            # Step 2: Adjust playback rate if necessary
+            temp_output = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            try:
+                temp_output.close()
+
+                # Write the audio content to a temp file
+                with open(temp_output.name, "wb") as f:
+                    f.write(response.audio_content)
+
+                if playback_rate != 1.0:
+                    adjusted_output = tempfile.NamedTemporaryFile(
+                        suffix=".wav", delete=False
+                    )
+                    adjusted_output.close()
+
+                    # Adjust playback rate with FFmpeg
+                    (
+                        ffmpeg.input(temp_output.name)
+                        .filter("atempo", str(playback_rate))
+                        .output(adjusted_output.name, format="wav")
+                        .overwrite_output()
+                        .run(quiet=True)
+                    )
+                    os.unlink(temp_output.name)  # Delete the original temp file
+                    temp_output.name = adjusted_output.name
+
+                # Step 3: Read the processed audio and encode to Base64
+                with open(temp_output.name, "rb") as f:
+                    audio_base64 = base64.b64encode(f.read()).decode("utf-8")
+
+                yield audio_base64
+
+            finally:
+                # Cleanup temporary files
+                if os.path.exists(temp_output.name):
+                    os.unlink(temp_output.name)
+
+    except Exception as e:
+        print(f"An error occurred during streaming TTS: {e}")
+        raise

@@ -28,3 +28,4 @@ torchaudio
 coqui-tts
 google-cloud-texttospeech
 langchain-google-genai
+ google-cloud-speech

@@ -45,6 +45,7 @@ from dotenv import load_dotenv
 import os
 import time
 from langchain_google_genai import ChatGoogleGenerativeAI
+from google.cloud import speech
 
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
@@ -155,7 +156,9 @@ You are an interviewer conducting a structured interview. Your task is to engage
 
 Language: Conduct the interview in the specified language: **{language}**
 
-Greeting: Start by greeting the interviewee politely and ask the first question together with the greetings in the same message..
+Greeting: Start by greeting the interviewee politely "Good morning! Thank you for joining the interview today. I hope you're doing well. Let's get started." + the first question .
+
+Do not ask any other questions. Only the provided interview questions should be asked.
 
 Always ask the question in the interviewer_output field and wait for the interviewee's response before proceeding.
 
@@ -165,6 +168,8 @@ Interview Questions: Begin the interview by asking the provided questions:
 
 Ask each question one at a time. After receiving an answer, provide brief and constructive feedback (if appropriate) before moving to the next question.
 If the interviewees does not provide an appropriate response after 3 tries, proceed on with the interview.
+
+Do not ask any follow up questions. Only ask the interview questions provided.
 
 Do not ask extra questions or provide additional information. Only ask the interview questions provided. 
 
@@ -330,6 +335,35 @@ def clean_chat_history(chat_history):
 
     return cleaned_history
 
+async def transcript_audio_gg(audio_file: UploadFile):
+    """
+    Asynchronously transcribes an uploaded audio file using Google Speech-to-Text API.
+    Args:
+        audio_file (UploadFile): The audio file uploaded via FastAPI.
+    Returns:
+        str: Transcribed text from the audio.
+    """
+    # Read the audio file content from `UploadFile`
+    audio_content = await audio_file.read()
+
+    # Initialize the Google Cloud Speech client
+    client = speech.SpeechClient()
+
+    # Configure recognition
+    audio = speech.RecognitionAudio(content=audio_content)
+    config = speech.RecognitionConfig(
+        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,  # Adjust based on your file format
+        sample_rate_hertz=16000,  # Ensure this matches your audio file
+        language_code="en-US",
+    )
+
+    # Perform synchronous recognition
+    response = client.recognize(config=config, audio=audio)
+
+    # Combine all transcripts into a single string
+    transcription_text = " ".join(result.alternatives[0].transcript for result in response.results)
+
+    return transcription_text
 
 @router.post("/start-interview")
 async def start_interview(interview_start_request_dto: InterviewStartRequestDto):
@@ -413,7 +447,7 @@ async def interview(
             file_content, audio_file.filename
         )
     else:
-        transcription_text = await transcript_audio(audio_file)
+        transcription_text = await transcribe_audio(audio_file)
     stt_duration = time.time() - start_time_stt
     print(f"Time taken for Speech-to-Text (STT): {stt_duration:.4f} seconds")
 
