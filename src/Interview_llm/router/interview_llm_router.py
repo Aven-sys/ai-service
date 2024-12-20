@@ -17,13 +17,13 @@ from langchain_core.prompts import (
     PromptTemplate,
     MessagesPlaceholder,
 )
-from langchain.output_parsers import PydanticOutputParser
+from langchain.output_parsers import PydanticOutputParser, StructuredOutputParser
 from langchain_openai import ChatOpenAI
 from uuid import uuid4
 from ..util.session_histories_util import get_session_history, session_histories
 from langchain_core.runnables.history import RunnableWithMessageHistory
 import json
-from ..util.interview_llm_util import generate_audio_base64, generate_audio_base64_file
+from ..util.interview_llm_util import generate_audio_base64, generate_audio_base64_file, generate_audio_base64_file_gg
 import whisper
 from langchain_core.messages import BaseMessage
 
@@ -40,6 +40,7 @@ from ..payload.request.llm_chat_request_dto import LLMChatRequestDto
 from dotenv import load_dotenv
 import os
 import time
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
@@ -152,7 +153,8 @@ prompt = ChatPromptTemplate.from_messages(
 prompt = prompt.partial(format_instructions=parser.get_format_instructions())
 
 # Initialize the LLM
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+# llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
 
 # Combine the prompt, LLM, and parser into a chain
 # chain = prompt | llm | parser
@@ -220,7 +222,7 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
     #         interview_output.interviewer_output, playback_rate=1.15
     #     )
 
-    response_audio = generate_audio_base64_file(
+    response_audio = generate_audio_base64_file_gg(
         interview_output.interviewer_output,
         playback_rate=1.15,
         language=interview_start_request_dto.context["language"],
@@ -298,7 +300,7 @@ async def interview(
 
     ## Test generate_audio_base64_file see which is faster. ByteIO or File***
     start_time_tts_file = time.time()
-    response_audio = generate_audio_base64_file(
+    response_audio = generate_audio_base64_file_gg(
         interview_output.interviewer_output,
         playback_rate=1.15,
         language=interview_input.context["language"],
