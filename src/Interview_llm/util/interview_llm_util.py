@@ -264,6 +264,9 @@ def get_language_code_gg(language_name: str) -> str:
         "german": "de-DE",
         "japanese": "ja-JP",
         "korean": "ko-KR",
+        "dutch": "nl-NL",
+        "chinese": "cmn-CN",
+        "hindi": "hi-IN",
     }
 
     if language_name_lower in language_map:

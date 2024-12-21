@@ -353,7 +353,6 @@ async def transcript_audio_gg(audio_file: UploadFile):
     audio = speech.RecognitionAudio(content=audio_content)
     config = speech.RecognitionConfig(
         encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,  # Adjust based on your file format
-        sample_rate_hertz=16000,  # Ensure this matches your audio file
         language_code="en-US",
     )
 
@@ -384,11 +383,8 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
     # print("Result type:", type(result))
     # print("Result content:", result.content)
 
-    # Only for Gemini Model
+    # Only for Gemini Model & Lamma Model
     interview_output = parse_llm_output(result.content)
-
-    # Lama Model
-    # interview_output = InterviewOutput(**json.loads(result.content))
 
     # Open AI
     # interview_output = InterviewOutput(**json.loads(result.content))
@@ -447,7 +443,7 @@ async def interview(
             file_content, audio_file.filename
         )
     else:
-        transcription_text = await transcribe_audio(audio_file)
+        transcription_text = await transcript_audio(audio_file)
     stt_duration = time.time() - start_time_stt
     print(f"Time taken for Speech-to-Text (STT): {stt_duration:.4f} seconds")
 
@@ -466,13 +462,11 @@ async def interview(
     llm_duration = time.time() - start_time_llm
     print(f"Time taken for LLM call: {llm_duration:.4f} seconds")
 
+    # Open AI
     # interview_output = InterviewOutput(**json.loads(result.content))
 
-    # Gemini Model
+    # Gemini Model & Lamma Model
     interview_output = parse_llm_output(result.content)
-
-    # Lama Model
-    # interview_output = InterviewOutput(**json.loads(result.content))
 
     # Text-to-Speech Step
     # start_time_tts = time.time()
