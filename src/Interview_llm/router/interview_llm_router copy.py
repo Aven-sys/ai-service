@@ -1,17 +1,30 @@
 from fastapi import APIRouter, HTTPException, File, UploadFile, Form
+from common.util import pydantic_util
+from common.util.langchain_pydantic_model_generator import (
+    print_pydantic_instance,
+    print_model_fields,
+)
+from ..util.langchain_pydantic_model_generator import (
+    create_pydantic_model_from_config,
+    print_model_fields,
+)
+from ..service import interview_llm_service
+
 from typing import Optional, Dict, List
 from pydantic import BaseModel, Field
 from langchain_core.prompts import (
     ChatPromptTemplate,
+    PromptTemplate,
     MessagesPlaceholder,
 )
-from langchain.output_parsers import PydanticOutputParser
+from langchain.output_parsers import PydanticOutputParser, StructuredOutputParser
 from langchain_openai import ChatOpenAI
 from uuid import uuid4
 from ..util.session_histories_util import get_session_history, session_histories
 from langchain_core.runnables.history import RunnableWithMessageHistory
 import json
 from ..util.interview_llm_util import (
+    generate_audio_base64,
     generate_audio_base64_file,
     generate_audio_base64_file_gg,
 )
@@ -25,6 +38,9 @@ from langchain_groq import ChatGroq
 # Deepgram
 from ..util.deepgram_util import DeepgramTTS
 
+# Request payload
+from ..payload.request.llm_chat_request_dto import LLMChatRequestDto
+
 from dotenv import load_dotenv
 import os
 import time
@@ -34,18 +50,8 @@ from google.cloud import speech
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
 # ========================= Flags =========================
-# STT
-STT_isGroq = True
-STT_isOpenWhisper = False
-
-# LLM
-LLM_isGroq = True
-LLM_isOpenAI = False
-
-# TTS
-TTS_isDeepgram = False
-TTS_isGTTS = False
-TTS_isGGCloud = True
+isUseGroq = True
+isDeepgram = False
 # ========================= Flags =========================
 
 router = APIRouter(
@@ -97,9 +103,55 @@ class InterviewStartResponseDto(BaseModel):
     chat_history: Optional[List[BaseMessage]] = None
 
 
-## =========================== Define the Prompt =========================
+# System prompt that includes all questions and instructions
+# system_prompt = """
+# You are an interviewer conducting a structured interview. Ask one question at a time, then wait for the interviewee's response before proceeding to the next question.
+# Greet the interviewee first politely. Then start the interview by asking the following questions (there may be 1 or more questions):
+
+# {interview_questions}
+
+# After each answer, provide brief feedback if appropriate, then stop. Wait for the interviewee’s next input before asking the next question. Note that there may only be one question. In that case, just ask that question and wait for the interviewee’s response.
+# Once the interview is completed, ask the interviewee’s if he/she has anything to add.
+# If not, summarize the interview and asked the interviewee’s if the information is correct. If the interviewee’s agree all information provided are correct, end the interview and thank the interviewee’s for participating in the interview and end the interview. Only set is_done to True when the interview is completed and you will not expect a response from the interviewee’s.
+
+# {format_instructions}
+# """
+
+## OPEN AI
+# system_prompt = """
+# You are an interviewer conducting a structured interview. Your task is to engage the interviewee in a professional and polite manner, asking one question at a time and waiting for their response before proceeding. Follow these steps:
+
+# Language: Conduct the interview in the specified language: **{language}**
+
+# Greeting: Start by greeting the interviewee politely and ask the first question.
+
+# Interview Questions: Begin the interview by asking the provided questions:
+
+# {interview_questions}
+
+# Ask each question one at a time. After receiving an answer, provide brief and constructive feedback (if appropriate) before moving to the next question.
+# If the interviewees does not provide an appropriate response after 3 tries, proceed on with the interview.
+
+# If only one question is provided, ask that question and wait for the response.
+
+# Wrapping Up: Once all the questions have been answered:
+
+# Ask the interviewee if they have anything to add.
+# Summarize the interview by restating the key points discussed and confirm with the interviewee if all the information provided is accurate.
+# Ending the Interview:
+
+# If the interviewee confirms that the information is accurate, thank them for their participation and end the interview.
+# Only set is_done to True once the interview is fully completed, and no further input from the interviewee is expected.
+
+# Please only return in response JSON valid format. Below is the schema for the JSON output.
+# 1. **Ensure proper JSON syntax**:
+#    - Use double quotes (`"`) for all keys and string values.
+#    - Do not include extra characters, comments, or formatting outside the JSON.
+# {format_instructions}
+# """
+
 ## LAMA 3.1
-LLAMA_system_prompt = """
+system_prompt = """
 You are an interviewer conducting a structured interview. Your task is to engage the interviewee in a professional and polite manner, asking one question at a time and waiting for their response before proceeding. Follow these steps:
 
 Language: Conduct the interview in the specified language: **{language}**
@@ -141,38 +193,48 @@ Please only return in response JSON valid format. Below is the schema for the JS
 {format_instructions}
 """
 
-OPENAI_system_prompt = """
-You are an interviewer conducting a structured interview. Your task is to engage the interviewee in a professional and polite manner, asking one question at a time and waiting for their response before proceeding. Follow these steps:
+# schema_text = """
+# {
+#     "interviewer_output": "string",
+#     "question": "string or null",
+#     "answer": "string or null",
+#     "is_done": "boolean",
+#     "summary": "string or null",
+#     "chat_history": "string or null"
+# }
+# """
 
-Language: Conduct the interview in the specified language: **{language}**
+# system_prompt = """
+# You are an interviewer conducting a structured interview. Your task is to engage the interviewee in a professional and polite manner, asking one question at a time and waiting for their response before proceeding. Follow these steps:
 
-Greeting: Start by greeting the interviewee politely.
+# Language: Conduct the interview in the specified language: **{language}**
 
-Interview Questions: Begin the interview by asking the provided questions:
+# Greeting: Start by greeting the interviewee politely.
 
-{interview_questions}
+# Interview Questions: Begin the interview by asking the provided questions:
 
-Ask each question one at a time. After receiving an answer, provide brief and constructive feedback (if appropriate) before moving to the next question.
-If the interviewees does not provide an appropriate response after 3 tries, proceed on with the interview.
+# {interview_questions}
 
-If only one question is provided, ask that question and wait for the response.
+# Ask each question one at a time. After receiving an answer, provide brief and constructive feedback (if appropriate) before moving to the next question.
+# If the interviewees does not provide an appropriate response after 3 tries, proceed on with the interview.
 
-Wrapping Up: Once all the questions have been answered:
+# If only one question is provided, ask that question and wait for the response.
 
-Ask the interviewee if they have anything to add.
-Summarize the interview by restating the key points discussed and confirm with the interviewee if all the information provided is accurate.
-Ending the Interview:
+# Wrapping Up: Once all the questions have been answered:
 
-If the interviewee confirms that the information is accurate, thank them for their participation and end the interview.
-Only set is_done to True once the interview is fully completed, and no further input from the interviewee is expected.
-{format_instructions}
-"""
+# Ask the interviewee if they have anything to add.
+# Summarize the interview by restating the key points discussed and confirm with the interviewee if all the information provided is accurate.
+# Ending the Interview:
 
-# ========================= Define the prompt template ======================
-if LLM_isGroq:
-    system_prompt = LLAMA_system_prompt
-elif LLM_isOpenAI:
-    system_prompt = OPENAI_system_prompt
+# If the interviewee confirms that the information is accurate, thank them for their participation and end the interview.
+# Only set is_done to True once the interview is fully completed, and no further input from the interviewee is expected.
+# """
+
+# Initialize the parser
+# parser = PydanticOutputParser(pydantic_object=InterviewOutput)
+
+# # Generate format instructions to guide the LLM
+# format_instructions = parser.get_format_instructions()
 
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -181,23 +243,22 @@ prompt = ChatPromptTemplate.from_messages(
         ("human", "{input}"),
     ]
 )
-# ========================= Initialize the LLM Model =========================
-# Initialize the parser
-if LLM_isGroq:
-    prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
-    llm = ChatGroq(
-        model="llama-3.1-8b-instant",  # Specify the desired model
-        temperature=0.3,  # Set the temperature as needed
-    )
-elif LLM_isOpenAI:
-    parser = PydanticOutputParser(pydantic_object=InterviewOutput)
-    prompt = prompt.partial(format_instructions=parser.get_format_instructions())
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+# prompt = prompt.partial(format_instructions=parser.get_format_instructions())
+prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
 
-# Gemini Test only
+# Initialize the LLM
+# llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 # llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+# llm = llm.with_structured_output(InterviewOutput.model_json_schema())
+llm = ChatGroq(
+    model="llama-3.1-8b-instant",  # Specify the desired model
+    temperature=0.3,  # Set the temperature as needed
+)
 
-# Chain the prompt and the LLM model
+# print("model_json_schema:", InterviewOutput.model_json_schema())
+
+# Combine the prompt, LLM, and parser into a chain
+# chain = prompt | llm | parser
 chain = prompt | llm
 
 # Wrap the chain with RunnableWithMessageHistory
@@ -207,7 +268,7 @@ chain_with_history = RunnableWithMessageHistory(
     input_messages_key="input",
     history_messages_key="history",
 )
-## =========================== Load TTS Model =========================
+
 # Load whisper
 # whisper_model = whisper.load_model("tiny.en")
 whisper_model = whisper.load_model("tiny")
@@ -215,11 +276,10 @@ whisper_model = whisper.load_model("tiny")
 # Load Groq Transcription Service
 groq_transcription_client = GroqTranscriptionService()
 
-## =========================== Load STT Model =========================
 # Deep gram
 deepgram_tts = DeepgramTTS(api_key=deepgram_api_key)
 
-## =========================== Private method =========================
+
 async def transcript_audio(audio_file):
     # Read the audio file content from `UploadFile` and save it to a temporary file
     audio_content = await audio_file.read()  # Read the audio data as bytes
@@ -275,7 +335,6 @@ def clean_chat_history(chat_history):
 
     return cleaned_history
 
-
 async def transcript_audio_gg(audio_file: UploadFile):
     """
     Asynchronously transcribes an uploaded audio file using Google Speech-to-Text API.
@@ -301,12 +360,9 @@ async def transcript_audio_gg(audio_file: UploadFile):
     response = client.recognize(config=config, audio=audio)
 
     # Combine all transcripts into a single string
-    transcription_text = " ".join(
-        result.alternatives[0].transcript for result in response.results
-    )
+    transcription_text = " ".join(result.alternatives[0].transcript for result in response.results)
 
     return transcription_text
-
 
 @router.post("/start-interview")
 async def start_interview(interview_start_request_dto: InterviewStartRequestDto):
@@ -327,32 +383,32 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
     # print("Result type:", type(result))
     # print("Result content:", result.content)
 
-    if LLM_isGroq:
-        interview_output = parse_llm_output(result.content)
-    elif LLM_isOpenAI:
-        interview_output = InterviewOutput(**json.loads(result.content))
+    # Only for Gemini Model & Lamma Model
+    interview_output = parse_llm_output(result.content)
 
-    # Text-to-Speech Step
-    if TTS_isDeepgram:
-        response_audio = deepgram_tts.text_to_speech_base64(
-            interview_output.interviewer_output
-        )
-    elif TTS_isGTTS:
-        response_audio = generate_audio_base64_file(
-            interview_output.interviewer_output, playback_rate=1.15
-        )
-    elif TTS_isGGCloud:
-        response_audio = generate_audio_base64_file_gg(
-            interview_output.interviewer_output,
-            playback_rate=1.0,
-            language=interview_start_request_dto.context["language"],
-        )
+    # Open AI
+    # interview_output = InterviewOutput(**json.loads(result.content))
+
+    # if isDeepgram:
+    #     response_audio = deepgram_tts.text_to_speech_base64(
+    #         interview_output.interviewer_output
+    #     )
+    # else:
+    #     response_audio = generate_audio_base64(
+    #         interview_output.interviewer_output, playback_rate=1.15
+    #     )
+
+    response_audio = generate_audio_base64_file_gg(
+        interview_output.interviewer_output,
+        playback_rate=1.0,
+        language=interview_start_request_dto.context["language"],
+    )
 
     # View Chat History
     chat_history = session_histories[session_id].messages
-    if LLM_isGroq:
-        clean_chat_history(chat_history)
     # print("Chat History:", chat_history)
+    # Gemini Model
+    # clean_chat_history(chat_history)
 
     return InterviewStartResponseDto(
         session_id=session_id,
@@ -381,12 +437,12 @@ async def interview(
 
     # Speech-to-Text Step
     start_time_stt = time.time()
-    if STT_isGroq:
+    if isUseGroq:
         file_content = await audio_file.read()
         transcription_text = groq_transcription_client.transcribe_audio(
             file_content, audio_file.filename
         )
-    elif STT_isOpenWhisper:
+    else:
         transcription_text = await transcript_audio(audio_file)
     stt_duration = time.time() - start_time_stt
     print(f"Time taken for Speech-to-Text (STT): {stt_duration:.4f} seconds")
@@ -406,35 +462,42 @@ async def interview(
     llm_duration = time.time() - start_time_llm
     print(f"Time taken for LLM call: {llm_duration:.4f} seconds")
 
-    if LLM_isGroq:
-        interview_output = parse_llm_output(result.content)
-    elif LLM_isOpenAI:
-        interview_output = InterviewOutput(**json.loads(result.content))
+    # Open AI
+    # interview_output = InterviewOutput(**json.loads(result.content))
+
+    # Gemini Model & Lamma Model
+    interview_output = parse_llm_output(result.content)
 
     # Text-to-Speech Step
-    start_time_tts = time.time()
-    if TTS_isDeepgram:
-        response_audio = deepgram_tts.text_to_speech_base64(
-            interview_output.interviewer_output
-        )
-    elif TTS_isGTTS:
-        response_audio = generate_audio_base64_file(
-            interview_output.interviewer_output, playback_rate=1.15
-        )
-    elif TTS_isGGCloud:
-        response_audio = generate_audio_base64_file_gg(
-            interview_output.interviewer_output,
-            playback_rate=1.0,
-            language=interview_input.context["language"],
-        )
-    tts_duration = time.time() - start_time_tts
-    print(f"Time taken for Text-to-Speech (TTS): {tts_duration:.4f} seconds")
+    # start_time_tts = time.time()
+    # if isDeepgram:
+    #     response_audio = deepgram_tts.text_to_speech_base64(
+    #         interview_output.interviewer_output
+    #     )
+    # else:
+    #     response_audio = generate_audio_base64(
+    #         interview_output.interviewer_output, playback_rate=1.15
+    #     )
+    # tts_duration = time.time() - start_time_tts
+    # print(f"Time taken for Text-to-Speech (TTS): {tts_duration:.4f} seconds")
+
+    ## Test generate_audio_base64_file see which is faster. ByteIO or File***
+    start_time_tts_file = time.time()
+    response_audio = generate_audio_base64_file_gg(
+        interview_output.interviewer_output,
+        playback_rate=1.0,
+        language=interview_input.context["language"],
+    )
+    tts_duration_file = time.time() - start_time_tts_file
+    print(
+        f"Time taken for Text-to-Speech (TTS) with File: {tts_duration_file:.4f} seconds"
+    )
 
     # View Chat History
     chat_history = session_histories[interview_input.session_id].messages
 
-    if LLM_isGroq:
-        clean_chat_history(chat_history)
+    # Gemini Model
+    clean_chat_history(chat_history)
 
     # Clear the session history if the interview is done
     if interview_output.is_done:
