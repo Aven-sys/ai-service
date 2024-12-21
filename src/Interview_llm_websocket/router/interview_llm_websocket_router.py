@@ -54,8 +54,9 @@ STT_isGroq = True
 STT_isOpenWhisper = False
 
 # LLM
-LLM_isGroq = True
+LLM_isGroq = False
 LLM_isOpenAI = False
+LLM_isGoogleGenerativeAI = True
 
 # TTS
 TTS_isDeepgram = False
@@ -150,10 +151,11 @@ Ending the Interview:
 If the interviewee confirms that the information is accurate, thank them for their participation and end the interview.
 Only set is_done to True once the interview is fully completed, and no further input from the interviewee is expected.
 
+Language: Conduct the interview in the specified language: **{language}** This is very important.
+
 Please only return in response JSON valid format. Below is the schema for the JSON output.
 1. **Ensure proper JSON syntax**:
    - Use double quotes (`"`) for all keys and string values.
-   - Do not include extra characters, comments, or formatting outside the JSON.
 {format_instructions}
 """
 
@@ -189,6 +191,8 @@ if LLM_isGroq:
     system_prompt = LLAMA_system_prompt
 elif LLM_isOpenAI:
     system_prompt = OPENAI_system_prompt
+elif LLM_isGoogleGenerativeAI:
+    system_prompt = LLAMA_system_prompt
 
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -209,6 +213,9 @@ elif LLM_isOpenAI:
     parser = PydanticOutputParser(pydantic_object=InterviewOutput)
     prompt = prompt.partial(format_instructions=parser.get_format_instructions())
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+elif LLM_isGoogleGenerativeAI:
+    prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
 
 # Gemini Test only
 # llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
@@ -226,7 +233,7 @@ chain_with_history = RunnableWithMessageHistory(
 
 ## =========================== Load TTS Model =========================
 # Load whisper
-whisper_model = whisper.load_model("tiny.en")
+whisper_model = whisper.load_model("tiny")
 
 # Load Groq Transcription Service
 groq_transcription_client = GroqTranscriptionService()
@@ -234,8 +241,6 @@ groq_transcription_client = GroqTranscriptionService()
 ## =========================== Load STT Model =========================
 # Deep gram
 deepgram_tts = DeepgramTTS(api_key=deepgram_api_key)
-
-
 ## =========================== Private method =========================
 async def transcript_audio(audio_file):
     # Read the audio file content from `UploadFile` and save it to a temporary file
@@ -371,7 +376,7 @@ async def interview_chatbot(websocket: WebSocket):
                         config={"configurable": {"session_id": session_id}},
                     )
 
-                    if LLM_isGroq:
+                    if LLM_isGroq or LLM_isGoogleGenerativeAI:
                         interview_output = parse_llm_output(result.content)
                     elif LLM_isOpenAI:
                         interview_output = InterviewOutput(**json.loads(result.content))
@@ -385,13 +390,13 @@ async def interview_chatbot(websocket: WebSocket):
                         audio_data = generate_audio_bytesio_gg(
                             interview_output.interviewer_output,
                             playback_rate=1.0,
-                            language="english",
+                            language=context["language"],
                         )
                     elif TTS_isGTTS:
                         audio_data = generate_audio(interview_output.interviewer_output)
 
                     chat_history = session_histories[session_id].messages
-                    if LLM_isGroq:
+                    if LLM_isGroq or LLM_isGoogleGenerativeAI:
                         clean_chat_history(chat_history)
 
                     outResponse = InterviewStartResponseDto(
@@ -401,14 +406,6 @@ async def interview_chatbot(websocket: WebSocket):
                         chat_history=chat_history,
                         type="interview_start_response",
                     )
-
-                    # Send the response to the client
-                    # await websocket.send_text(outResponse.model_dump_json())
-
-                    # # Send binary audio data
-                    # await websocket.send_bytes(audio_data.read())
-                    # # Acknowledge receipt
-                    # await websocket.send_text("Binary data received successfully.")
 
                     # COmbined and sent the JSON and audio in bytes
                     combined_bytes = combine_audio_and_json(
@@ -448,8 +445,9 @@ async def interview_chatbot(websocket: WebSocket):
                                 },
                                 config={"configurable": {"session_id": session_id}},
                             )
+                        print("Result: ", result.content)
 
-                        if LLM_isGroq:
+                        if LLM_isGroq or LLM_isGoogleGenerativeAI:
                             interview_output = parse_llm_output(result.content)
                         elif LLM_isOpenAI:
                             interview_output = InterviewOutput(
@@ -465,7 +463,7 @@ async def interview_chatbot(websocket: WebSocket):
                             audio_data = generate_audio_bytesio_gg(
                                 interview_output.interviewer_output,
                                 playback_rate=1.0,
-                                language="english",
+                                language=interview_start_request_dto.context["language"],
                             )
                         elif TTS_isGTTS:
                             audio_data = generate_audio(
@@ -473,7 +471,7 @@ async def interview_chatbot(websocket: WebSocket):
                             )
 
                         chat_history = session_histories[session_id].messages
-                        if LLM_isGroq:
+                        if LLM_isGroq or LLM_isGoogleGenerativeAI:
                             clean_chat_history(chat_history)
 
                         outResponse = InterviewStartResponseDto(

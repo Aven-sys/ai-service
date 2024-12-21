@@ -41,6 +41,7 @@ STT_isOpenWhisper = False
 # LLM
 LLM_isGroq = True
 LLM_isOpenAI = False
+LLM_isGoogleGenerativeAI = False
 
 # TTS
 TTS_isDeepgram = False
@@ -173,6 +174,9 @@ if LLM_isGroq:
     system_prompt = LLAMA_system_prompt
 elif LLM_isOpenAI:
     system_prompt = OPENAI_system_prompt
+elif LLM_isGoogleGenerativeAI:
+    system_prompt = LLAMA_system_prompt
+
 
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -193,6 +197,9 @@ elif LLM_isOpenAI:
     parser = PydanticOutputParser(pydantic_object=InterviewOutput)
     prompt = prompt.partial(format_instructions=parser.get_format_instructions())
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+elif LLM_isGoogleGenerativeAI:
+    prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
 
 # Gemini Test only
 # llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
@@ -328,7 +335,7 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
     # print("Result type:", type(result))
     # print("Result content:", result.content)
 
-    if LLM_isGroq:
+    if LLM_isGroq or LLM_isGoogleGenerativeAI:
         interview_output = parse_llm_output(result.content)
     elif LLM_isOpenAI:
         interview_output = InterviewOutput(**json.loads(result.content))
@@ -351,7 +358,7 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
 
     # View Chat History
     chat_history = session_histories[session_id].messages
-    if LLM_isGroq:
+    if LLM_isGroq or LLM_isGoogleGenerativeAI:
         clean_chat_history(chat_history)
     # print("Chat History:", chat_history)
 
@@ -407,7 +414,7 @@ async def interview(
     llm_duration = time.time() - start_time_llm
     print(f"Time taken for LLM call: {llm_duration:.4f} seconds")
 
-    if LLM_isGroq:
+    if LLM_isGroq or LLM_isGoogleGenerativeAI:
         interview_output = parse_llm_output(result.content)
     elif LLM_isOpenAI:
         interview_output = InterviewOutput(**json.loads(result.content))
@@ -434,7 +441,7 @@ async def interview(
     # View Chat History
     chat_history = session_histories[interview_input.session_id].messages
 
-    if LLM_isGroq:
+    if LLM_isGroq or LLM_isGoogleGenerativeAI:
         clean_chat_history(chat_history)
 
     # Clear the session history if the interview is done
