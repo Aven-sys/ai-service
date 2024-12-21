@@ -219,6 +219,7 @@ groq_transcription_client = GroqTranscriptionService()
 # Deep gram
 deepgram_tts = DeepgramTTS(api_key=deepgram_api_key)
 
+
 ## =========================== Private method =========================
 async def transcript_audio(audio_file):
     # Read the audio file content from `UploadFile` and save it to a temporary file
