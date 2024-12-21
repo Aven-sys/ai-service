@@ -1,15 +1,12 @@
-from fastapi import APIRouter, HTTPException, File, UploadFile, Form, WebSocket, WebSocketDisconnect
-from common.util import pydantic_util
-from common.util.langchain_pydantic_model_generator import (
-    print_pydantic_instance,
-    print_model_fields,
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    File,
+    UploadFile,
+    Form,
+    WebSocket,
+    WebSocketDisconnect,
 )
-from ..util.langchain_pydantic_model_generator import (
-    create_pydantic_model_from_config,
-    print_model_fields,
-)
-from ..service import interview_llm_service
-
 from typing import Optional, Dict, List
 from pydantic import BaseModel, Field
 from langchain_core.prompts import (
@@ -23,7 +20,11 @@ from uuid import uuid4
 from ..util.session_histories_util import get_session_history, session_histories
 from langchain_core.runnables.history import RunnableWithMessageHistory
 import json
-from ..util.interview_llm_util import generate_audio_base64, generate_audio
+from ..util.interview_llm_util import (
+    generate_audio_base64,
+    generate_audio,
+    generate_audio_bytesio_gg,
+)
 import whisper
 from langchain_core.messages import BaseMessage
 import base64
@@ -41,12 +42,25 @@ from ..payload.request.llm_chat_request_dto import LLMChatRequestDto
 
 from dotenv import load_dotenv
 import os
+import time
+from langchain_google_genai import ChatGoogleGenerativeAI
+from google.cloud import speech
 
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
 # ========================= Flags =========================
-isUseGroq = False
-isDeepgram = False
+# STT
+STT_isGroq = True
+STT_isOpenWhisper = False
+
+# LLM
+LLM_isGroq = True
+LLM_isOpenAI = False
+
+# TTS
+TTS_isDeepgram = False
+TTS_isGTTS = False
+TTS_isGGCloud = True
 # ========================= Flags =========================
 
 router = APIRouter(
@@ -99,22 +113,54 @@ class InterviewStartResponseDto(BaseModel):
     type: str
 
 
-# System prompt that includes all questions and instructions
-# system_prompt = """
-# You are an interviewer conducting a structured interview. Ask one question at a time, then wait for the interviewee's response before proceeding to the next question.
-# Greet the interviewee first politely. Then start the interview by asking the following questions (there may be 1 or more questions):
-
-# {interview_questions}
-
-# After each answer, provide brief feedback if appropriate, then stop. Wait for the interviewee’s next input before asking the next question. Note that there may only be one question. In that case, just ask that question and wait for the interviewee’s response.
-# Once the interview is completed, ask the interviewee’s if he/she has anything to add.
-# If not, summarize the interview and asked the interviewee’s if the information is correct. If the interviewee’s agree all information provided are correct, end the interview and thank the interviewee’s for participating in the interview and end the interview. Only set is_done to True when the interview is completed and you will not expect a response from the interviewee’s.
-
-# {format_instructions}
-# """
-
-system_prompt = """
+## =========================== Define the Prompt =========================
+## LAMA 3.1
+LLAMA_system_prompt = """
 You are an interviewer conducting a structured interview. Your task is to engage the interviewee in a professional and polite manner, asking one question at a time and waiting for their response before proceeding. Follow these steps:
+
+Language: Conduct the interview in the specified language: **{language}**
+
+Greeting: Start by greeting the interviewee politely "Good morning! Thank you for joining the interview today. I hope you're doing well. Let's get started." + the first question .
+
+Do not ask any other questions. Only the provided interview questions should be asked.
+
+Always ask the question in the interviewer_output field and wait for the interviewee's response before proceeding.
+
+Interview Questions: Begin the interview by asking the provided questions:
+
+{interview_questions}
+
+Ask each question one at a time. After receiving an answer, provide brief and constructive feedback (if appropriate) before moving to the next question.
+If the interviewees does not provide an appropriate response after 3 tries, proceed on with the interview.
+
+Do not ask any follow up questions. Only ask the interview questions provided.
+
+Do not ask extra questions or provide additional information. Only ask the interview questions provided. 
+
+Always end your response with the question to keep the conversation flowing.
+
+If only one question is provided, ask that question and wait for the response.
+
+Wrapping Up: Once all the questions have been answered:
+
+Ask the interviewee if they have anything to add.
+Summarize the interview by restating the key points discussed and confirm with the interviewee if all the information provided is accurate.
+Ending the Interview:
+
+If the interviewee confirms that the information is accurate, thank them for their participation and end the interview.
+Only set is_done to True once the interview is fully completed, and no further input from the interviewee is expected.
+
+Please only return in response JSON valid format. Below is the schema for the JSON output.
+1. **Ensure proper JSON syntax**:
+   - Use double quotes (`"`) for all keys and string values.
+   - Do not include extra characters, comments, or formatting outside the JSON.
+{format_instructions}
+"""
+
+OPENAI_system_prompt = """
+You are an interviewer conducting a structured interview. Your task is to engage the interviewee in a professional and polite manner, asking one question at a time and waiting for their response before proceeding. Follow these steps:
+
+Language: Conduct the interview in the specified language: **{language}**
 
 Greeting: Start by greeting the interviewee politely.
 
@@ -135,12 +181,14 @@ Ending the Interview:
 
 If the interviewee confirms that the information is accurate, thank them for their participation and end the interview.
 Only set is_done to True once the interview is fully completed, and no further input from the interviewee is expected.
-
 {format_instructions}
 """
 
-# Initialize the parser
-parser = PydanticOutputParser(pydantic_object=InterviewOutput)
+# ========================= Define the prompt template ======================
+if LLM_isGroq:
+    system_prompt = LLAMA_system_prompt
+elif LLM_isOpenAI:
+    system_prompt = OPENAI_system_prompt
 
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -149,13 +197,23 @@ prompt = ChatPromptTemplate.from_messages(
         ("human", "{input}"),
     ]
 )
-prompt = prompt.partial(format_instructions=parser.get_format_instructions())
+# ========================= Initialize the LLM Model =========================
+# Initialize the parser
+if LLM_isGroq:
+    prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
+    llm = ChatGroq(
+        model="llama-3.1-8b-instant",  # Specify the desired model
+        temperature=0.3,  # Set the temperature as needed
+    )
+elif LLM_isOpenAI:
+    parser = PydanticOutputParser(pydantic_object=InterviewOutput)
+    prompt = prompt.partial(format_instructions=parser.get_format_instructions())
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
-# Initialize the LLM
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+# Gemini Test only
+# llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
 
-# Combine the prompt, LLM, and parser into a chain
-# chain = prompt | llm | parser
+# Chain the prompt and the LLM model
 chain = prompt | llm
 
 # Wrap the chain with RunnableWithMessageHistory
@@ -166,16 +224,19 @@ chain_with_history = RunnableWithMessageHistory(
     history_messages_key="history",
 )
 
+## =========================== Load TTS Model =========================
 # Load whisper
 whisper_model = whisper.load_model("tiny.en")
 
 # Load Groq Transcription Service
 groq_transcription_client = GroqTranscriptionService()
 
+## =========================== Load STT Model =========================
 # Deep gram
 deepgram_tts = DeepgramTTS(api_key=deepgram_api_key)
 
 
+## =========================== Private method =========================
 async def transcript_audio(audio_file):
     # Read the audio file content from `UploadFile` and save it to a temporary file
     audio_content = await audio_file.read()  # Read the audio data as bytes
@@ -221,6 +282,47 @@ def combine_audio_and_json(audio_bytes: bytes, json_metadata: dict) -> bytes:
     return combined_bytes
 
 
+def parse_llm_output(raw_content: str):
+    try:
+        # Clean the raw content by removing backticks and formatting
+        if raw_content.startswith("```json"):
+            raw_content = raw_content.strip("```json\n").strip("\n```")
+
+        # Parse the JSON
+        parsed_data = json.loads(raw_content)
+
+        # Convert to Pydantic model
+        return InterviewOutput(**parsed_data)
+    except json.JSONDecodeError as e:
+        print("JSON Decode Error:", e)
+        raise ValueError("Failed to parse LLM output as JSON.")
+
+
+def clean_chat_history(chat_history):
+    """
+    Cleans the content of all messages in the chat history by stripping unwanted formatting.
+
+    Args:
+        chat_history (list): A list of HumanMessage or AIMessage objects.
+
+    Returns:
+        list: A list of cleaned HumanMessage or AIMessage objects.
+    """
+
+    def clean_content(raw_content: str) -> str:
+        if raw_content.startswith("```json"):
+            return raw_content.lstrip("```json\n").rstrip("\n```")
+        return raw_content
+
+    cleaned_history = []
+    for message in chat_history:
+        if hasattr(message, "content"):
+            message.content = clean_content(message.content)
+        cleaned_history.append(message)
+
+    return cleaned_history
+
+
 # Set Temp socket connection to store the session_id
 connections = {}
 
@@ -236,6 +338,91 @@ async def interview_chatbot(websocket: WebSocket):
             message = await websocket.receive()
 
             if "text" in message:  # JSON or text message
+                if message["text"] == "RESPONSE_END":
+                    print("End of response received.")
+                    # print ("1 - Connections: ", connections)
+
+                    audio_data = None
+                    # Get the audio Buffer array from connections[websocket]
+                    if websocket in connections:
+                        if "audio_buffer" in connections[websocket]:
+                            audio_data = bytes(connections[websocket]["audio_buffer"])
+
+                    # Transcription logic
+                    if STT_isGroq:
+                        transcription_text = groq_transcription_client.transcribe_audio(
+                            audio_data, "audio.wav"  # Filename is optional
+                        )
+                    elif STT_isOpenWhisper:
+                        transcription_text = await transcribe_audio(audio_data)
+
+                    # Get session ID and context from the WebSocket connection
+                    session_id = connections[websocket]["session_id"]
+                    context = connections[websocket]["context"]
+
+                    context["input"] = transcription_text
+
+                    # Check if session Id is in session_histories
+                    if session_id not in session_histories:
+                        raise HTTPException(status_code=404, detail="Session not found")
+
+                    result = chain_with_history.invoke(
+                        {**context},
+                        config={"configurable": {"session_id": session_id}},
+                    )
+
+                    if LLM_isGroq:
+                        interview_output = parse_llm_output(result.content)
+                    elif LLM_isOpenAI:
+                        interview_output = InterviewOutput(**json.loads(result.content))
+
+                    # Generate TTS audio
+                    if TTS_isDeepgram:
+                        audio_data = deepgram_tts.text_to_speech(
+                            interview_output.interviewer_output
+                        )
+                    elif TTS_isGGCloud:
+                        audio_data = generate_audio_bytesio_gg(
+                            interview_output.interviewer_output,
+                            playback_rate=1.0,
+                            language="english",
+                        )
+                    elif TTS_isGTTS:
+                        audio_data = generate_audio(interview_output.interviewer_output)
+
+                    chat_history = session_histories[session_id].messages
+                    if LLM_isGroq:
+                        clean_chat_history(chat_history)
+
+                    outResponse = InterviewStartResponseDto(
+                        session_id=session_id,
+                        response=interview_output,
+                        # response_audio=response_audio,
+                        chat_history=chat_history,
+                        type="interview_start_response",
+                    )
+
+                    # Send the response to the client
+                    # await websocket.send_text(outResponse.model_dump_json())
+
+                    # # Send binary audio data
+                    # await websocket.send_bytes(audio_data.read())
+                    # # Acknowledge receipt
+                    # await websocket.send_text("Binary data received successfully.")
+
+                    # COmbined and sent the JSON and audio in bytes
+                    combined_bytes = combine_audio_and_json(
+                        audio_data.read(), outResponse.model_dump()
+                    )
+                    await websocket.send_bytes(combined_bytes)
+
+                    # delete the audio_buffer from connections[websocket]
+                    if websocket in connections:
+                        if "audio_buffer" in connections[websocket]:
+                            del connections[websocket]["audio_buffer"]
+                    print("2 - Connections: ", connections)
+                    continue
+
                 try:
                     # Parse the text as JSON
                     data = json.loads(message["text"])
@@ -262,18 +449,32 @@ async def interview_chatbot(websocket: WebSocket):
                                 config={"configurable": {"session_id": session_id}},
                             )
 
-                        interview_output = InterviewOutput(**json.loads(result.content))
-                        chat_history = session_histories[session_id].messages
+                        if LLM_isGroq:
+                            interview_output = parse_llm_output(result.content)
+                        elif LLM_isOpenAI:
+                            interview_output = InterviewOutput(
+                                **json.loads(result.content)
+                            )
 
                         # Generate TTS audio
-                        if isDeepgram:
+                        if TTS_isDeepgram:
                             audio_data = deepgram_tts.text_to_speech(
                                 interview_output.interviewer_output
                             )
-                        else:
+                        elif TTS_isGGCloud:
+                            audio_data = generate_audio_bytesio_gg(
+                                interview_output.interviewer_output,
+                                playback_rate=1.0,
+                                language="english",
+                            )
+                        elif TTS_isGTTS:
                             audio_data = generate_audio(
                                 interview_output.interviewer_output
                             )
+
+                        chat_history = session_histories[session_id].messages
+                        if LLM_isGroq:
+                            clean_chat_history(chat_history)
 
                         outResponse = InterviewStartResponseDto(
                             session_id=session_id,
@@ -306,66 +507,76 @@ async def interview_chatbot(websocket: WebSocket):
                 binary_data = message["bytes"]
                 print(f"Received binary data: {len(binary_data)} bytes")
 
-                audio_file_path = "received_audio.wav"
+                audio_chunk = message["bytes"]
+                print(f"Received audio chunk: {len(audio_chunk)} bytes")
 
-                # Save the binary audio data to a file
-                with open(audio_file_path, "wb") as f:
-                    f.write(binary_data)
+                # check if connections[websocket]["audio_buffer"] exists, if not create it
+                if "audio_buffer" not in connections[websocket]:
+                    connections[websocket]["audio_buffer"] = bytearray()
 
-                # Transcription logic
-                if isUseGroq:
-                    transcription_text = groq_transcription_client.transcribe_audio(
-                        binary_data, "audio.wav"  # Filename is optional
-                    )
-                else:
-                    transcription_text = await transcribe_audio(binary_data)
+                # Append chunk to buffer
+                connections[websocket]["audio_buffer"].extend(audio_chunk)
 
-                # Get session ID and context from the WebSocket connection
-                session_id = connections[websocket]["session_id"]
-                context = connections[websocket]["context"]
+                # audio_file_path = "received_audio.wav"
 
-                context["input"] = transcription_text
+                # # Save the binary audio data to a file
+                # with open(audio_file_path, "wb") as f:
+                #     f.write(binary_data)
 
-                # Check if session Id is in session_histories
-                if session_id not in session_histories:
-                    raise HTTPException(status_code=404, detail="Session not found")
+                # # Transcription logic
+                # if isUseGroq:
+                #     transcription_text = groq_transcription_client.transcribe_audio(
+                #         binary_data, "audio.wav"  # Filename is optional
+                #     )
+                # else:
+                #     transcription_text = await transcribe_audio(binary_data)
 
-                result = chain_with_history.invoke(
-                    {**context},
-                    config={"configurable": {"session_id": session_id}},
-                )
-                interview_output = InterviewOutput(**json.loads(result.content))
-                chat_history = session_histories[session_id].messages
+                # # Get session ID and context from the WebSocket connection
+                # session_id = connections[websocket]["session_id"]
+                # context = connections[websocket]["context"]
 
-                                # Generate TTS audio
-                if isDeepgram:
-                    audio_data = deepgram_tts.text_to_speech(
-                        interview_output.interviewer_output
-                    )
-                else:
-                    audio_data = generate_audio(interview_output.interviewer_output)
+                # context["input"] = transcription_text
 
-                outResponse = InterviewStartResponseDto(
-                    session_id=session_id,
-                    response=interview_output,
-                    # response_audio=response_audio,
-                    chat_history=chat_history,
-                    type="interview_start_response",
-                )
+                # # Check if session Id is in session_histories
+                # if session_id not in session_histories:
+                #     raise HTTPException(status_code=404, detail="Session not found")
 
-                # Send the response to the client
-                # await websocket.send_text(outResponse.model_dump_json())
+                # result = chain_with_history.invoke(
+                #     {**context},
+                #     config={"configurable": {"session_id": session_id}},
+                # )
+                # interview_output = InterviewOutput(**json.loads(result.content))
+                # chat_history = session_histories[session_id].messages
 
-                # # Send binary audio data
-                # await websocket.send_bytes(audio_data.read())
-                # # Acknowledge receipt
-                # await websocket.send_text("Binary data received successfully.")
+                #                 # Generate TTS audio
+                # if isDeepgram:
+                #     audio_data = deepgram_tts.text_to_speech(
+                #         interview_output.interviewer_output
+                #     )
+                # else:
+                #     audio_data = generate_audio(interview_output.interviewer_output)
 
-                # COmbined and sent the JSON and audio in bytes
-                combined_bytes = combine_audio_and_json(
-                    audio_data.read(), outResponse.model_dump()
-                )
-                await websocket.send_bytes(combined_bytes)
+                # outResponse = InterviewStartResponseDto(
+                #     session_id=session_id,
+                #     response=interview_output,
+                #     # response_audio=response_audio,
+                #     chat_history=chat_history,
+                #     type="interview_start_response",
+                # )
+
+                # # Send the response to the client
+                # # await websocket.send_text(outResponse.model_dump_json())
+
+                # # # Send binary audio data
+                # # await websocket.send_bytes(audio_data.read())
+                # # # Acknowledge receipt
+                # # await websocket.send_text("Binary data received successfully.")
+
+                # # COmbined and sent the JSON and audio in bytes
+                # combined_bytes = combine_audio_and_json(
+                #     audio_data.read(), outResponse.model_dump()
+                # )
+                # await websocket.send_bytes(combined_bytes)
             else:
                 print("Unknown message type received.")
                 await websocket.send_text("Unknown message type.")
