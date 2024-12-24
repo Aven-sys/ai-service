@@ -234,7 +234,7 @@ def get_language_code_gg(language_name: str) -> str:
     # Special handling for Chinese
     if "chinese" in language_name_lower:
         if "simplified" in language_name_lower or "cn" in language_name_lower:
-            return "zh-CN"  # Simplified Chinese
+            return "cmn-CN"  # Simplified Chinese
         elif "traditional" in language_name_lower or "tw" in language_name_lower:
             return "zh-TW"  # Traditional Chinese
         else:

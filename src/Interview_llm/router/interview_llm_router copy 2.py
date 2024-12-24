@@ -169,98 +169,51 @@ Only set is_done to True once the interview is fully completed, and no further i
 {format_instructions}
 """
 
-# # ========================= Define the prompt template ======================
-# if LLM_isGroq:
-#     system_prompt = LLAMA_system_prompt
-# elif LLM_isOpenAI:
-#     system_prompt = OPENAI_system_prompt
-# elif LLM_isGoogleGenerativeAI:
-#     system_prompt = LLAMA_system_prompt
+# ========================= Define the prompt template ======================
+if LLM_isGroq:
+    system_prompt = LLAMA_system_prompt
+elif LLM_isOpenAI:
+    system_prompt = OPENAI_system_prompt
+elif LLM_isGoogleGenerativeAI:
+    system_prompt = LLAMA_system_prompt
 
 
-# prompt = ChatPromptTemplate.from_messages(
-#     [
-#         ("system", system_prompt),
-#         MessagesPlaceholder(variable_name="history"),
-#         ("human", "{input}"),
-#     ]
-# )
-# # ========================= Initialize the LLM Model =========================
-# # Initialize the parser
-# if LLM_isGroq:
-#     prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
-#     llm = ChatGroq(
-#         model="llama-3.1-8b-instant",  # Specify the desired model
-#         temperature=0.3,  # Set the temperature as needed
-#     )
-# elif LLM_isOpenAI:
-#     parser = PydanticOutputParser(pydantic_object=InterviewOutput)
-#     prompt = prompt.partial(format_instructions=parser.get_format_instructions())
-#     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-# elif LLM_isGoogleGenerativeAI:
-#     prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
-#     llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.4)
-
-# # Gemini Test only
-# # llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
-
-# # Chain the prompt and the LLM model
-# chain = prompt | llm
-
-# # Wrap the chain with RunnableWithMessageHistory
-# chain_with_history = RunnableWithMessageHistory(
-#     runnable=chain,
-#     get_session_history=get_session_history,
-#     input_messages_key="input",
-#     history_messages_key="history",
-# )
-
-## If the language is English, use Groq, otherwise use Google Generative AI
-chain_with_history = None
-def buildChainWithLang(language):
-    if LLM_isGroq:
-        system_prompt = LLAMA_system_prompt
-    elif LLM_isOpenAI:
-        system_prompt = OPENAI_system_prompt
-    elif LLM_isGoogleGenerativeAI:
-        system_prompt = LLAMA_system_prompt
-
-
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", system_prompt),
-            MessagesPlaceholder(variable_name="history"),
-            ("human", "{input}"),
-        ]
+prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", system_prompt),
+        MessagesPlaceholder(variable_name="history"),
+        ("human", "{input}"),
+    ]
+)
+# ========================= Initialize the LLM Model =========================
+# Initialize the parser
+if LLM_isGroq:
+    prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
+    llm = ChatGroq(
+        model="llama-3.1-8b-instant",  # Specify the desired model
+        temperature=0.3,  # Set the temperature as needed
     )
-    # ========================= Initialize the LLM Model =========================
-    # Initialize the parser
-    if language == "english":
-        prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
-        llm = ChatGroq(
-            model="llama-3.1-8b-instant",  # Specify the desired model
-            temperature=0.3,  # Set the temperature as needed
-        )
-        print("Using Groq LLAMA")
-    else:
-        prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
-        print("Using Google Generative AI")
+elif LLM_isOpenAI:
+    parser = PydanticOutputParser(pydantic_object=InterviewOutput)
+    prompt = prompt.partial(format_instructions=parser.get_format_instructions())
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+elif LLM_isGoogleGenerativeAI:
+    prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.4)
 
-    # Gemini Test only
-    # llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+# Gemini Test only
+# llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
 
-    # Chain the prompt and the LLM model
-    chain = prompt | llm
+# Chain the prompt and the LLM model
+chain = prompt | llm
 
-    # Wrap the chain with RunnableWithMessageHistory
-    return RunnableWithMessageHistory(
-        runnable=chain,
-        get_session_history=get_session_history,
-        input_messages_key="input",
-        history_messages_key="history",
-    )
-
+# Wrap the chain with RunnableWithMessageHistory
+chain_with_history = RunnableWithMessageHistory(
+    runnable=chain,
+    get_session_history=get_session_history,
+    input_messages_key="input",
+    history_messages_key="history",
+)
 ## =========================== Load TTS Model =========================
 # Load whisper
 # whisper_model = whisper.load_model("tiny.en")
@@ -362,19 +315,13 @@ async def transcript_audio_gg(audio_file: UploadFile):
 
     return transcription_text
 
-chains = {}
+
 @router.post("/start-interview")
 async def start_interview(interview_start_request_dto: InterviewStartRequestDto):
     session_id = str(uuid4())
 
-    language = interview_start_request_dto.context["language"]
-
-    # Build the chain with the specified language
-    chain_with_history = buildChainWithLang(language)
-    chains[session_id] = chain_with_history
-        
     # Initialize the session with the specified memory type
-    # get_session_history(session_id, memory_type=interview_start_request_dto.memory_type)
+    get_session_history(session_id, memory_type=interview_start_request_dto.memory_type)
 
     # Start the interview with an empty input (LLM will handle the flow)
     result = chain_with_history.invoke(
@@ -460,7 +407,6 @@ async def interview(
 
     # LLM Call Step
     start_time_llm = time.time()
-    chain_with_history = chains[interview_input.session_id] # This is new
     result = chain_with_history.invoke(
         {**interview_input.context},
         config={"configurable": {"session_id": interview_input.session_id}},
@@ -501,7 +447,6 @@ async def interview(
     # Clear the session history if the interview is done
     if interview_output.is_done:
         del session_histories[interview_input.session_id]
-        del chains[interview_input.session_id]
 
     total_duration = time.time() - start_time_total
     print(f"Total time taken for the request: {total_duration:.4f} seconds")
