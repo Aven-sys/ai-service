@@ -632,6 +632,7 @@ async def generate_token(
 async def interview(
     audio_file: UploadFile = File(...),
     language: str = Form(...),
+    order: Optional[int] = Form(None),
 ):
     # Speech-to-Text Step
     start_time_stt = time.time()
@@ -648,4 +649,4 @@ async def interview(
     print(f"Time taken for Speech-to-Text (STT): {stt_duration:.4f} seconds")
 
     # Return response
-    return {"transcript": transcription_text}
+    return {"transcript": transcription_text, "order": order}
