@@ -30,13 +30,15 @@ import os
 import time
 from langchain_google_genai import ChatGoogleGenerativeAI
 from google.cloud import speech
+import httpx
 
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # ========================= Flags =========================
 # STT
-STT_isGroq = True
-STT_isOpenWhisper = False
+STT_isGroq = False
+STT_isOpenWhisper = True
 
 # LLM
 LLM_isGroq = False
@@ -48,10 +50,15 @@ TTS_isDeepgram = False
 TTS_isGTTS = False
 TTS_isGGCloud = True
 # ========================= Flags =========================
-
 router = APIRouter(
     prefix="/api/llm-interview",
 )
+
+
+# Define Pydantic model for requestDTO for session start
+class InterviewSessionStartRequestDto(BaseModel):
+    questions: str
+    language: str
 
 
 class InterviewStartRequestDto(BaseModel):
@@ -217,6 +224,8 @@ Only set is_done to True once the interview is fully completed, and no further i
 
 ## If the language is English, use Groq, otherwise use Google Generative AI
 chain_with_history = None
+
+
 def buildChainWithLang(language):
     if LLM_isGroq:
         system_prompt = LLAMA_system_prompt
@@ -224,7 +233,6 @@ def buildChainWithLang(language):
         system_prompt = OPENAI_system_prompt
     elif LLM_isGoogleGenerativeAI:
         system_prompt = LLAMA_system_prompt
-
 
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -260,6 +268,7 @@ def buildChainWithLang(language):
         input_messages_key="input",
         history_messages_key="history",
     )
+
 
 ## =========================== Load TTS Model =========================
 # Load whisper
@@ -362,7 +371,10 @@ async def transcript_audio_gg(audio_file: UploadFile):
 
     return transcription_text
 
+
 chains = {}
+
+
 @router.post("/start-interview")
 async def start_interview(interview_start_request_dto: InterviewStartRequestDto):
     session_id = str(uuid4())
@@ -372,7 +384,7 @@ async def start_interview(interview_start_request_dto: InterviewStartRequestDto)
     # Build the chain with the specified language
     chain_with_history = buildChainWithLang(language)
     chains[session_id] = chain_with_history
-        
+
     # Initialize the session with the specified memory type
     # get_session_history(session_id, memory_type=interview_start_request_dto.memory_type)
 
@@ -460,7 +472,7 @@ async def interview(
 
     # LLM Call Step
     start_time_llm = time.time()
-    chain_with_history = chains[interview_input.session_id] # This is new
+    chain_with_history = chains[interview_input.session_id]  # This is new
     result = chain_with_history.invoke(
         {**interview_input.context},
         config={"configurable": {"session_id": interview_input.session_id}},
@@ -529,3 +541,87 @@ async def end_interview(session_id: str):
     del session_histories[session_id]
 
     return {"transcript": full_history}
+
+
+@router.post("/token")
+async def generate_token(
+    interview_session_start_request: InterviewSessionStartRequestDto,
+):
+    print(
+        "interview_session_start_request:", interview_session_start_request.model_dump()
+    )
+    questions = interview_session_start_request.questions
+    language = interview_session_start_request.language
+    instructions = f"""
+    You are an interviewer. Start the conversation by greeting the user warmly and explaining that you will conduct an interview. Ask the following questions sequentially:
+    {questions}
+
+    Do not ask extra questions or provide additional information. Only ask the interview questions provided. 
+
+    Always end your response with the question to keep the conversation flowing.
+
+    Wrapping Up: Once all the questions have been answered:
+
+    Ask the interviewee if they have anything to add.
+    Summarize the interview by restating the key points discussed and confirm with the interviewee if all the information provided is accurate.
+    
+    Ending the Interview:
+    If the interviewee confirms that the information is accurate, thank them for their participation and end the interview.
+    
+    1) Except for the summary, keep all the responses short and concise. One sentence is enough.
+    2) Conduct the interview in this language: *{language}*.
+    3) The last sentence is crucial to end the interview. Make sure to use it when the interview is complete.
+    4) Finally, please response "**<-//->**". It is a marker to end the interview application. This should not be in the same response as the summary.
+    """
+    url = "https://api.openai.com/v1/realtime/sessions"
+
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": "gpt-4o-mini-realtime-preview",
+        "voice": "alloy",
+        "modalities": ["audio", "text"],
+        "input_audio_transcription": {"model": "whisper-1"},
+        "input_audio_format": "pcm16",
+        "output_audio_format": "pcm16",
+        "instructions": instructions,
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, json=payload)
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+
+        return response.json()
+        pass
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate token: {str(e)}"
+        )
+
+
+@router.post("/transcribe-audio")
+async def interview(
+    audio_file: UploadFile = File(...),
+    langauge: str = Form(...),
+):
+    # Speech-to-Text Step
+    start_time_stt = time.time()
+    if STT_isGroq:
+        file_content = await audio_file.read()
+        transcription_text = groq_transcription_client.transcribe_audio(
+            file_content, audio_file.filename
+        )
+    elif STT_isOpenWhisper:
+        transcription_text = await transcript_audio(audio_file)
+    stt_duration = time.time() - start_time_stt
+    print(f"Time taken for Speech-to-Text (STT): {stt_duration:.4f} seconds")
+
+    # Return response
+    return {"transcript": transcription_text}
