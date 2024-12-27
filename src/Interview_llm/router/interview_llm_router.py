@@ -39,6 +39,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # STT
 STT_isGroq = False
 STT_isOpenWhisper = True
+STT_isOpenWhisper_en = True
 
 # LLM
 LLM_isGroq = False
@@ -274,6 +275,7 @@ def buildChainWithLang(language):
 # Load whisper
 # whisper_model = whisper.load_model("tiny.en")
 whisper_model = whisper.load_model("tiny")
+whisper_model_en = whisper.load_model("tiny.en")
 
 # Load Groq Transcription Service
 groq_transcription_client = GroqTranscriptionService()
@@ -296,6 +298,24 @@ async def transcript_audio(audio_file):
     transcription_result = whisper_model.transcribe("temp_audio.wav")
     transcription_text = transcription_result["text"]
     # print("Transcription:", transcription_text)
+    return transcription_text
+
+async def transcript_audio_lang(audio_file, language):
+    # Read the audio file content from `UploadFile` and save it to a temporary file
+    audio_content = await audio_file.read()  # Read the audio data as bytes
+
+    # Transcribe the audio data using Whisper
+    with open("temp_audio.wav", "wb") as temp_audio_file:
+        temp_audio_file.write(audio_content)
+
+    # Run Whisper transcription on the saved file
+    if language == "english":
+        print("Transcribing in English")
+        transcription_result = whisper_model_en.transcribe("temp_audio.wav")
+    else:
+        print("Transcribing in foreign language")
+        transcription_result = whisper_model.transcribe("temp_audio.wav")
+    transcription_text = transcription_result["text"]
     return transcription_text
 
 
@@ -556,6 +576,8 @@ async def generate_token(
     You are an interviewer. Start the conversation by greeting the user warmly and explaining that you will conduct an interview. Ask the following questions sequentially:
     {questions}
 
+    Speak at a medium pace.
+
     Do not ask extra questions or provide additional information. Only ask the interview questions provided. 
 
     Always end your response with the question to keep the conversation flowing.
@@ -582,7 +604,7 @@ async def generate_token(
 
     payload = {
         "model": "gpt-4o-mini-realtime-preview",
-        "voice": "alloy",
+        "voice": "shimmer",
         "modalities": ["audio", "text"],
         "input_audio_transcription": {"model": "whisper-1"},
         "input_audio_format": "pcm16",
@@ -609,7 +631,7 @@ async def generate_token(
 @router.post("/transcribe-audio")
 async def interview(
     audio_file: UploadFile = File(...),
-    langauge: str = Form(...),
+    language: str = Form(...),
 ):
     # Speech-to-Text Step
     start_time_stt = time.time()
@@ -618,6 +640,8 @@ async def interview(
         transcription_text = groq_transcription_client.transcribe_audio(
             file_content, audio_file.filename
         )
+    elif STT_isOpenWhisper and STT_isOpenWhisper_en:
+        transcription_text = await transcript_audio_lang(audio_file, language)
     elif STT_isOpenWhisper:
         transcription_text = await transcript_audio(audio_file)
     stt_duration = time.time() - start_time_stt
