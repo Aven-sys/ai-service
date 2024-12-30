@@ -213,6 +213,7 @@ def generate_audio_bytesio_gg(text: str, playback_rate: float = 1.0, language: s
         print(f"An error occurred: {e}")
         raise
 
+
 def get_language_code_gg(language_name: str) -> str:
     """
     Convert a language name to its Google Cloud language code.
