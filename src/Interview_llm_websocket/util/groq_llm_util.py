@@ -8,7 +8,7 @@ class GroqTranscriptionService:
     def __init__(self, model: str = "whisper-large-v3-turbo", language: str = "en"):
         self.client = Groq(api_key=groq_api_key)  # Initialize the Groq client
         self.model = model
-        self.language = language
+        # self.language = language
 
     def transcribe_audio(self, file: bytes, filename: str) -> str:
         """
@@ -21,7 +21,7 @@ class GroqTranscriptionService:
             file=(filename, file),  # Provide the file content
             model=self.model,  # Use the specified model
             response_format="json",  # Return JSON
-            language=self.language,  # Language of transcription
+            # language=self.language,  # Language of transcription
             temperature=0.0,  # Optional temperature setting
         )
         return transcription.text
