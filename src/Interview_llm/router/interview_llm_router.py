@@ -606,7 +606,7 @@ async def generate_token(
         "model": "gpt-4o-mini-realtime-preview",
         "voice": "shimmer",
         "modalities": ["audio", "text"],
-        "input_audio_transcription": {"model": "whisper-1"},
+        # "input_audio_transcription": {"model": "whisper-1"},
         "input_audio_format": "pcm16",
         "output_audio_format": "pcm16",
         "instructions": instructions,
