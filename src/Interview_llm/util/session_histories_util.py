@@ -13,9 +13,12 @@ from langchain_core.messages import BaseMessage, AIMessage
 import json
 from dotenv import load_dotenv
 import os
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
+
+# llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
 
 # Dictionary to store memory instances for each session
 session_histories: Dict[str, BaseChatMessageHistory] = {}
@@ -35,12 +38,12 @@ def get_session_history(session_id: str, memory_type: str = "chat") -> BaseChatM
                 memory_key="history"   # Must match the MessagesPlaceholder variable_name
             )
         elif memory_type == "summarize":
-            llm = ChatOpenAI(temperature=0)
+            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
             session_histories[session_id] = ConversationSummaryBufferMemory(
                 llm=llm,
                 max_token_limit=1000,
                 return_messages=True,  # Important: Must return messages for RunnableWithMessageHistory
-                memory_key="history"   # Must match the MessagesPlaceholder variable_name
+                # memory_key="history"   # Must match the MessagesPlaceholder variable_name
             )
         else:
             raise ValueError(f"Unsupported memory type: {memory_type}")
