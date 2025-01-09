@@ -20,7 +20,7 @@ class GeneralMatchingResponse(BaseModel):
         # Generate an instance with all None fields
         return cls(matches=None, overall_score=None)
     
-class JobToCandidateMatchingDTO(BaseModel):
+class MatchingCriteriaDTO(BaseModel):
     salary: Optional[GeneralMatchingResponse] = None
     years_of_experience: Optional[GeneralMatchingResponse] = None
     qualifications: Optional[GeneralMatchingResponse] = None
@@ -31,8 +31,5 @@ class JobToCandidateMatchingDTO(BaseModel):
     keywords: Optional[GeneralMatchingResponse] = None
     total_score: Optional[float] = None
 
-class JobToCandidateMatchingListDTO(BaseModel):
-    candidates: Optional[List[JobToCandidateMatchingDTO]] = None
-
-class CandidateToJobMatchingListDTO(BaseModel):
-    jobs: Optional[List[JobToCandidateMatchingDTO]] = None
+class MatchingListDTO(BaseModel):
+    results: Optional[List[MatchingCriteriaDTO]] = None

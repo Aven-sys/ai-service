@@ -1,11 +1,13 @@
 from sentence_transformers import SentenceTransformer
-import sys
-import json
 import numpy as np
+import torch
 from embeddings.payload.response.embedding_response_dto import EmbeddingResponseDto
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model_name = "all-mpnet-base-v2"
+model = SentenceTransformer(model_name).to(device)
+
 def generate_embeddings(input_string, model_name, normalize=False):
-    model = SentenceTransformer(model_name)
     # Ensure input_string is always a list
     if isinstance(input_string, str):
         input_string = [input_string]
