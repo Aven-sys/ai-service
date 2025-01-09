@@ -19,6 +19,8 @@ load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 
 class LLM:
+    model_cache = {}
+
     def __init__(
         self,
         input,
@@ -40,17 +42,13 @@ class LLM:
         self.parser = self.initialize_parser()
 
     def initialize_model(self):
-        openai_model_list = [
-            "gpt-3.5-turbo",
-            "gpt-4o",
-            "gpt-4o-mini",
-        ]
-
-        if self.model_name in openai_model_list:
-            return ChatOpenAI(model=self.model_name, temperature=0.5)
-        else:
-            return ChatOpenAI(model=self.model_name, temperature=0.5)
-
+        # Check if the model is already in the cache
+        if self.model_name not in LLM.model_cache:
+            # If not, instantiate a new model and store it in the cache
+            model = ChatOpenAI(model=self.model_name, temperature=0.5)
+            LLM.model_cache[self.model_name] = model
+        # Return the model from the cache
+        return LLM.model_cache[self.model_name]
     # def initialize_prompt(self):
     #     # Initialize the prompt template, with an optional system prompt
     #     if self.prompt_type == "chat":
@@ -90,7 +88,7 @@ class LLM:
             pydantic_model_config = create_pydantic_model_from_config(
                 json.dumps(self.structure_output_config)
             )
-            print_pydantic_model(pydantic_model_config)
+            # print_pydantic_model(pydantic_model_config)
             return PydanticOutputParser(pydantic_object=pydantic_model_config)
 
         return None
@@ -110,13 +108,13 @@ class LLM:
         chain = self.create_chain()
 
         # Resolve and print the system prompt for debugging
-        resolved_prompt = self.prompt_template.format_prompt(**input_data).to_string()
-        print("Resolved System Prompt:")
-        print(resolved_prompt)
+        # resolved_prompt = self.prompt_template.format_prompt(**input_data).to_string()
+        # print("Resolved System Prompt:")
+        # print(resolved_prompt)
 
         response = chain.invoke(input_data)
-        print_pydantic_instance(response)
-        print(type(response))
+        # print_pydantic_instance(response)
+        # print(type(response))
         return response
         # Execute the chat with retry mechanism based on max_error_allowed
         # retries = 0
