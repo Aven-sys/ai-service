@@ -226,11 +226,11 @@ def get_keyword_matching(base_keywords: List[str], compare_keywords: List[str]) 
 
 def get_salary_matching(base_salary: List[str], compare_salary: List[str]) -> GeneralMatchingResponse:
     # Extract numeric value from base_salary string
-    base_salary_match = re.search(r"[\d,]+", base_salary[0])
+    base_salary_match = re.search(r"[\d,]+", base_salary[0]) if base_salary else 0
     base_salary_float = float(base_salary_match.group().replace(",", "")) if base_salary_match else 0
 
     # Extract numeric value from compare_salary string
-    compare_salary_match = re.search(r"[\d,]+", compare_salary[0])
+    compare_salary_match = re.search(r"[\d,]+", compare_salary[0]) if compare_salary else 0
     compare_salary_float = float(compare_salary_match.group().replace(",", "")) if compare_salary_match else 0
 
     # Initialize matching results list
