@@ -173,7 +173,7 @@ def calculate_semantic_scores_batch(base_data: List[str], compare_data: List[str
     try:
         all_embeddings = semantic_model.encode(all_data, convert_to_tensor=True)
     except Exception as e:
-        print(f"Error encoding data with model '{model_name}': {e}")
+        print(f"Error encoding data with model: {e}")
         return GeneralMatchingResponse(matches=[], overall_score=0)
 
     # Split embeddings for base and compare data
@@ -226,12 +226,16 @@ def get_keyword_matching(base_keywords: List[str], compare_keywords: List[str]) 
 
 def get_salary_matching(base_salary: List[str], compare_salary: List[str]) -> GeneralMatchingResponse:
     # Extract numeric value from base_salary string
-    base_salary_match = re.search(r"[\d,]+", base_salary[0]) if base_salary else 0
-    base_salary_float = float(base_salary_match.group().replace(",", "")) if base_salary_match else 0
+    base_salary_match = re.search(r"[\d,]+", base_salary[0]) if base_salary else None
+    base_salary_float = float(base_salary_match.group().replace(",", "")) if base_salary_match else None
 
     # Extract numeric value from compare_salary string
-    compare_salary_match = re.search(r"[\d,]+", compare_salary[0]) if compare_salary else 0
-    compare_salary_float = float(compare_salary_match.group().replace(",", "")) if compare_salary_match else 0
+    compare_salary_match = re.search(r"[\d,]+", compare_salary[0]) if compare_salary else None
+    compare_salary_float = float(compare_salary_match.group().replace(",", "")) if compare_salary_match else None
+    
+    # Check if base years of experience is zero or None
+    if base_salary_match is None or compare_salary_match is None:
+        return GeneralMatchingResponse(matches=None, overall_score=0)
 
     # Initialize matching results list
     matching_results = []
