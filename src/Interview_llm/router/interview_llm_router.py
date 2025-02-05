@@ -32,6 +32,12 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from google.cloud import speech
 import httpx
 
+# Translation
+from deep_translator import GoogleTranslator
+from langdetect import detect_langs
+import time
+import re
+
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -40,6 +46,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 STT_isGroq = False
 STT_isOpenWhisper = True
 STT_isOpenWhisper_en = True
+STT_isDeepgram = False
 
 # LLM
 LLM_isGroq = False
@@ -299,6 +306,7 @@ async def transcript_audio(audio_file):
     transcription_text = transcription_result["text"]
     # print("Transcription:", transcription_text)
     return transcription_text
+
 
 async def transcript_audio_lang(audio_file, language):
     # Read the audio file content from `UploadFile` and save it to a temporary file
@@ -645,9 +653,48 @@ async def interview(
         transcription_text = await transcript_audio_lang(audio_file, language)
     elif STT_isOpenWhisper:
         transcription_text = await transcript_audio(audio_file)
+    elif STT_isDeepgram:
+        transcription_text = await deepgram_tts.speech_to_text(audio_file)
+
     stt_duration = time.time() - start_time_stt
     print(f"Time taken for Speech-to-Text (STT): {stt_duration:.4f} seconds")
+
+    # Trim text front and back for empty spaces
+    transcription_text = transcription_text.strip()
 
     # Return response
     return {"transcript": transcription_text, "order": order}
 
+
+class TranslationRequest(BaseModel):
+    text: str
+    language: str
+    order: Optional[int] = None
+
+
+@router.post("/translate")
+async def translate_text(request: TranslationRequest):
+    languageMap = {
+        "english": "en",
+        "chinese": "zh-CN",
+        "spanish": "es",
+        "french": "fr",
+        "german": "de",
+        "italian": "it",
+    }
+
+    # Translate the text to the specified language
+    start_time_translate = time.time()
+    if request.text == "":
+        return {"translated_text": "", "order": request.order}
+
+    languageCode = languageMap[request.language]
+
+    translated_text = GoogleTranslator(source="auto", target=languageCode).translate(
+        request.text
+    )
+    translate_duration = time.time() - start_time_translate
+    print(f"Time taken for translation: {translate_duration:.4f} seconds")
+
+    # Return response
+    return {"translated_text": translated_text, "order": request.order}

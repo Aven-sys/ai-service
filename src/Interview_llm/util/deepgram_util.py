@@ -4,10 +4,13 @@ from deepgram.utils import verboselogs
 from deepgram import (
     DeepgramClient,
     SpeakOptions,
+    PrerecordedOptions,
+    FileSource,
 )
 import base64
 import os
 from io import BytesIO
+
 
 class DeepgramTTS:
     def __init__(self, api_key: str):
@@ -83,3 +86,38 @@ class DeepgramTTS:
 
         except Exception as e:
             raise RuntimeError(f"Failed to convert text to speech: {e}")
+
+    async def speech_to_text(self, audio_file, language: str = "en") -> str:
+        """
+        Convert an uploaded audio file to text using Deepgram's STT API.
+
+        Args:
+            audio_file (UploadFile): The uploaded audio file from FastAPI.
+            language (str): The language code for transcription (default is "en" for English).
+
+        Returns:
+            str: The transcribed text from the audio file.
+        """
+        try:
+            # Read audio file as binary
+            file_content = await audio_file.read()
+
+            # Prepare payload following Deepgram's example
+            payload = {"buffer": file_content}
+
+            # Configure Deepgram options
+            options = PrerecordedOptions(
+                model="nova-2-general",
+                smart_format=True,
+                detect_language=True,  # Enable automatic language detection
+            )
+
+            # Remove await since Deepgram's transcribe_file returns a synchronous response
+            response = self.client.listen.rest.v("1").transcribe_file(payload, options)
+
+            # Get the transcript from the response
+            transcript = response.results.channels[0].alternatives[0].transcript
+            return transcript.strip()
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to transcribe audio: {e}")
