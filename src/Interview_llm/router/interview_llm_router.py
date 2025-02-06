@@ -326,6 +326,43 @@ async def transcript_audio_lang(audio_file, language):
     transcription_text = transcription_result["text"]
     return transcription_text
 
+async def transcript_audio_langFixed(audio_file):
+    # Read the audio file content from `UploadFile` and save it to a temporary file
+    audio_content = await audio_file.read()  # Read the audio data as bytes
+
+    # Transcribe the audio data using Whisper
+    with open("temp_audio.wav", "wb") as temp_audio_file:
+        temp_audio_file.write(audio_content)
+
+    # Load and preprocess the audio
+    audio = whisper.load_audio("temp_audio.wav")
+    audio = whisper.pad_or_trim(audio)
+    # mel = whisper.log_mel_spectrogram(audio).to(whisper_model.device)
+
+
+    # make log-Mel spectrogram and move to the same device as the model
+    mel = whisper.log_mel_spectrogram(audio, n_mels=whisper_model.dims.n_mels).to(whisper_model.device)
+
+    # Detect language
+    _, probs = whisper_model.detect_language(mel)
+    detected_language = max(probs, key=probs.get)  # Get the highest probability language
+
+    print(f"Detected language: {detected_language} with probability: {probs[detected_language]:.2f}")
+
+    # Transcribe using the detected language
+    transcription_result = whisper_model.transcribe("temp_audio.wav", language=detected_language)
+
+    # Run Whisper transcription on the saved file
+    # if language == "english":
+    #     print("Transcribing in English")
+    #     transcription_result = whisper_model_en.transcribe("temp_audio.wav")
+    # else:
+    #     print("Transcribing in foreign language")
+    #     transcription_result = whisper_model.transcribe("temp_audio.wav")
+
+    transcription_text = transcription_result["text"]
+    return transcription_text
+
 
 def parse_llm_output(raw_content: str):
     try:
@@ -650,7 +687,8 @@ async def interview(
             file_content, audio_file.filename
         )
     elif STT_isOpenWhisper and STT_isOpenWhisper_en:
-        transcription_text = await transcript_audio_lang(audio_file, language)
+        # transcription_text = await transcript_audio_lang(audio_file, language)
+        transcription_text = await transcript_audio_langFixed(audio_file)
     elif STT_isOpenWhisper:
         transcription_text = await transcript_audio(audio_file)
     elif STT_isDeepgram:
