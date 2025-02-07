@@ -43,6 +43,10 @@ from langdetect import detect_langs
 import time
 import re
 
+from langdetect import detect
+from transformers import MarianMTModel, MarianTokenizer
+from optimum.onnxruntime import ORTModelForSeq2SeqLM
+
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -723,11 +727,24 @@ class TranslationRequest(BaseModel):
     order: Optional[int] = None
 
 
+# Model cache for faster reuse
+model_cache = {}
+
+
 @router.post("/translate")
 async def translate_text(request: TranslationRequest):
-    languageMap = {
+    # languageMap = {
+    #     "english": "en",
+    #     "chinese": "zh-CN",
+    #     "spanish": "es",
+    #     "french": "fr",
+    #     "german": "de",
+    #     "italian": "it",
+    # }
+
+    languageMapMt = {
         "english": "en",
-        "chinese": "zh-CN",
+        "chinese": "zh",
         "spanish": "es",
         "french": "fr",
         "german": "de",
@@ -739,7 +756,9 @@ async def translate_text(request: TranslationRequest):
     if request.text == "":
         return {"translated_text": "", "order": request.order}
 
-    languageCode = languageMap[request.language]
+    # languageCode = languageMapMt[request.language]
+    languageCode = languageMapMt.get(request.language, "en")  # Default to English
+
 
     print("Request Text:", request.text)
     print("Language Code:", languageCode)
@@ -750,7 +769,7 @@ async def translate_text(request: TranslationRequest):
     # )
 
     # Google Translator
-    translator = GoogleTranslator(source="auto", target=languageCode)
+    # translator = GoogleTranslator(source="auto", target=languageCode)
 
     # Libre Translator
     # translator = LibreTranslator(source='auto', target=languageCode)
@@ -761,11 +780,63 @@ async def translate_text(request: TranslationRequest):
     # ChatGpt Translator
     # translated_text = ChatGptTranslator(api_key=OPENAI_API_KEY, target=languageCode).translate(text=request.text)
 
+    # translated_text = translator.translate(request.text)
 
-    translated_text = translator.translate(request.text)
+    translated_text = translate(request.text, languageCode)
 
     translate_duration = time.time() - start_time_translate
     print(f"Time taken for translation: {translate_duration:.4f} seconds")
 
     # Return response
     return {"translated_text": translated_text, "order": request.order}
+
+
+# Function to detect language
+def detect_language(text):
+    return detect(text)
+
+
+# Function to load the correct translation model
+def load_translation_model(src_lang, tgt_lang):
+    model_name = f"Helsinki-NLP/opus-mt-{src_lang}-{tgt_lang}"
+    if model_name in model_cache:
+        print(f"Model {model_name} found in cache")
+        return model_cache[model_name]
+    tokenizer = MarianTokenizer.from_pretrained(model_name)
+    # model = MarianMTModel.from_pretrained(model_name)
+    model = ORTModelForSeq2SeqLM.from_pretrained(model_name, from_transformers=True)
+    model_cache[model_name] = model, tokenizer
+    return model, tokenizer
+
+
+langMap = {
+    "zh-cn": "zh",
+    "zh": "zh",
+    "en": "en",
+    "fr": "french",
+    "de": "german",
+    "it": "italian",
+}
+
+
+# Function to get the correct mapped language
+def get_mapped_lang(src_lang):
+    return langMap.get(src_lang, "en")  # Default to original if not found
+
+# Function to translate text
+def translate(text, target_lang="en"):
+    src_lang = detect_language(text)  # Detect source language
+    # print(f"Detected language: {src_lang}")
+    # src_lang = "zh"
+
+    if src_lang == target_lang:
+        return text
+
+    try:
+        # model, tokenizer = load_translation_model(langMap["src_lang"], target_lang)
+        model, tokenizer = load_translation_model(get_mapped_lang(src_lang), "en")
+        inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
+        translated_tokens = model.generate(**inputs)
+        return tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+    except Exception:
+        return f"Translation model not available for {src_lang} to {target_lang}"

@@ -33,3 +33,4 @@ langgraph
 ipython
 deep-translator
 langdetect
+optimum[onnxruntime]
