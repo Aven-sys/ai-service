@@ -33,7 +33,12 @@ from google.cloud import speech
 import httpx
 
 # Translation
-from deep_translator import GoogleTranslator
+from deep_translator import (
+    GoogleTranslator,
+    LibreTranslator,
+    MyMemoryTranslator,
+    ChatGptTranslator,
+)
 from langdetect import detect_langs
 import time
 import re
@@ -326,6 +331,7 @@ async def transcript_audio_lang(audio_file, language):
     transcription_text = transcription_result["text"]
     return transcription_text
 
+
 async def transcript_audio_langFixed(audio_file):
     # Read the audio file content from `UploadFile` and save it to a temporary file
     audio_content = await audio_file.read()  # Read the audio data as bytes
@@ -339,18 +345,25 @@ async def transcript_audio_langFixed(audio_file):
     audio = whisper.pad_or_trim(audio)
     # mel = whisper.log_mel_spectrogram(audio).to(whisper_model.device)
 
-
     # make log-Mel spectrogram and move to the same device as the model
-    mel = whisper.log_mel_spectrogram(audio, n_mels=whisper_model.dims.n_mels).to(whisper_model.device)
+    mel = whisper.log_mel_spectrogram(audio, n_mels=whisper_model.dims.n_mels).to(
+        whisper_model.device
+    )
 
     # Detect language
     _, probs = whisper_model.detect_language(mel)
-    detected_language = max(probs, key=probs.get)  # Get the highest probability language
+    detected_language = max(
+        probs, key=probs.get
+    )  # Get the highest probability language
 
-    print(f"Detected language: {detected_language} with probability: {probs[detected_language]:.2f}")
+    print(
+        f"Detected language: {detected_language} with probability: {probs[detected_language]:.2f}"
+    )
 
     # Transcribe using the detected language
-    transcription_result = whisper_model.transcribe("temp_audio.wav", language=detected_language)
+    transcription_result = whisper_model.transcribe(
+        "temp_audio.wav", language=detected_language
+    )
 
     # Run Whisper transcription on the saved file
     # if language == "english":
@@ -728,9 +741,29 @@ async def translate_text(request: TranslationRequest):
 
     languageCode = languageMap[request.language]
 
-    translated_text = GoogleTranslator(source="auto", target=languageCode).translate(
-        request.text
-    )
+    print("Request Text:", request.text)
+    print("Language Code:", languageCode)
+
+    # Google Translator
+    # translated_text = GoogleTranslator(source="auto", target=languageCode).translate(
+    #     request.text
+    # )
+
+    # Google Translator
+    translator = GoogleTranslator(source="auto", target=languageCode)
+
+    # Libre Translator
+    # translator = LibreTranslator(source='auto', target=languageCode)
+
+    # MyMemory Translator
+    # translator = MyMemoryTranslator(source='auto', target=languageCode)
+
+    # ChatGpt Translator
+    # translated_text = ChatGptTranslator(api_key=OPENAI_API_KEY, target=languageCode).translate(text=request.text)
+
+
+    translated_text = translator.translate(request.text)
+
     translate_duration = time.time() - start_time_translate
     print(f"Time taken for translation: {translate_duration:.4f} seconds")
 
