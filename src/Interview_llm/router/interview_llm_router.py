@@ -46,6 +46,8 @@ import re
 from langdetect import detect
 from transformers import MarianMTModel, MarianTokenizer
 from optimum.onnxruntime import ORTModelForSeq2SeqLM
+from easynmt import EasyNMT
+
 
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -782,7 +784,14 @@ async def translate_text(request: TranslationRequest):
 
     # translated_text = translator.translate(request.text)
 
-    translated_text = translate(request.text, languageCode)
+    # Transformer Opus
+    # translated_text = translate(request.text, languageCode)
+
+    model = EasyNMT('opus-mt')
+    # model = EasyNMT('m2m_100_418M')
+
+# It will automatically detect the language
+    translated_text = model.translate(request.text, target_lang='en')
 
     translate_duration = time.time() - start_time_translate
     print(f"Time taken for translation: {translate_duration:.4f} seconds")
@@ -840,3 +849,4 @@ def translate(text, target_lang="en"):
         return tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
     except Exception:
         return f"Translation model not available for {src_lang} to {target_lang}"
+    
