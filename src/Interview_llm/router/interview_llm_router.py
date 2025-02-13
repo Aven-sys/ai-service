@@ -788,10 +788,9 @@ async def translate_text(request: TranslationRequest):
     # translated_text = translate(request.text, languageCode)
 
     model = EasyNMT('opus-mt')
-    # model = EasyNMT('m2m_100_418M')
 
 # It will automatically detect the language
-    translated_text = model.translate(request.text, target_lang='en')
+    translated_text = model.translate(request.text, target_lang=languageCode)
 
     translate_duration = time.time() - start_time_translate
     print(f"Time taken for translation: {translate_duration:.4f} seconds")
