@@ -47,7 +47,7 @@ from langdetect import detect
 from transformers import MarianMTModel, MarianTokenizer
 from optimum.onnxruntime import ORTModelForSeq2SeqLM
 from easynmt import EasyNMT
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -301,6 +301,9 @@ groq_transcription_client = GroqTranscriptionService()
 ## =========================== Load STT Model =========================
 # Deep gram
 deepgram_tts = DeepgramTTS(api_key=deepgram_api_key)
+
+## =========================== Load Translation Model =================
+translationModel = EasyNMT("opus-mt")
 
 
 ## =========================== Private method =========================
@@ -728,6 +731,15 @@ class TranslationRequest(BaseModel):
     language: str
     order: Optional[int] = None
 
+class TranslationSingleRequest(BaseModel):
+    text: str
+    order: Optional[int] = None
+
+
+class TranslationListRequest(BaseModel):
+    conversation_list: List[TranslationSingleRequest]
+    language: str
+
 
 # Model cache for faster reuse
 model_cache = {}
@@ -761,7 +773,6 @@ async def translate_text(request: TranslationRequest):
     # languageCode = languageMapMt[request.language]
     languageCode = languageMapMt.get(request.language, "en")  # Default to English
 
-
     print("Request Text:", request.text)
     print("Language Code:", languageCode)
 
@@ -787,9 +798,9 @@ async def translate_text(request: TranslationRequest):
     # Transformer Opus
     # translated_text = translate(request.text, languageCode)
 
-    model = EasyNMT('opus-mt')
+    model = EasyNMT("opus-mt")
 
-# It will automatically detect the language
+    # It will automatically detect the language
     translated_text = model.translate(request.text, target_lang=languageCode)
 
     translate_duration = time.time() - start_time_translate
@@ -799,53 +810,160 @@ async def translate_text(request: TranslationRequest):
     return {"translated_text": translated_text, "order": request.order}
 
 
-# Function to detect language
-def detect_language(text):
-    return detect(text)
+# @router.post("/translate-list/async")
+# async def translate_text(request: TranslationListRequest):
+    languageMapMt = {
+        "english": "en",
+        "chinese": "zh",
+        "spanish": "es",
+        "french": "fr",
+        "german": "de",
+        "italian": "it",
+    }
 
+    # Translate the text to the specified language
+    start_time_translate = time.time()
+    if len(request.conversation_list) == 0:
+        return []
 
-# Function to load the correct translation model
-def load_translation_model(src_lang, tgt_lang):
-    model_name = f"Helsinki-NLP/opus-mt-{src_lang}-{tgt_lang}"
-    if model_name in model_cache:
-        print(f"Model {model_name} found in cache")
-        return model_cache[model_name]
-    tokenizer = MarianTokenizer.from_pretrained(model_name)
-    # model = MarianMTModel.from_pretrained(model_name)
-    model = ORTModelForSeq2SeqLM.from_pretrained(model_name, from_transformers=True)
-    model_cache[model_name] = model, tokenizer
-    return model, tokenizer
+    # languageCode = languageMapMt[request.language]
+    languageCode = languageMapMt.get(request.language, "en")  # Default to English
 
+    # To store results from each compare matching with their index
+    results_with_indices = []
+    results_out = []
 
-langMap = {
-    "zh-cn": "zh",
-    "zh": "zh",
-    "en": "en",
-    "fr": "french",
-    "de": "german",
-    "it": "italian",
-}
-
-
-# Function to get the correct mapped language
-def get_mapped_lang(src_lang):
-    return langMap.get(src_lang, "en")  # Default to original if not found
-
-# Function to translate text
-def translate(text, target_lang="en"):
-    src_lang = detect_language(text)  # Detect source language
-    # print(f"Detected language: {src_lang}")
-    # src_lang = "zh"
-
-    if src_lang == target_lang:
-        return text
-
-    try:
-        # model, tokenizer = load_translation_model(langMap["src_lang"], target_lang)
-        model, tokenizer = load_translation_model(get_mapped_lang(src_lang), "en")
-        inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
-        translated_tokens = model.generate(**inputs)
-        return tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
-    except Exception:
-        return f"Translation model not available for {src_lang} to {target_lang}"
+    # Define the maximum number of workers (threads)
+    max_workers = min(10, len(request.conversation_list))  # Adjust based on available resources
     
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(translate_text, compare_data.text, languageCode): (i, compare_data)
+            for i, compare_data in enumerate(request.conversation_list)
+        }
+
+        for future in as_completed(futures):
+            index, original_data = futures[future]
+            try:
+                translated_text = future.result()
+                # Add translated_text to the original object
+                # request.conversation_list[index].translated_text = translated_text
+                results_out.append({
+                    **request.conversation_list[index].model_dump(),  # Convert Pydantic model to dict
+                    "translated_text": translated_text
+                })
+            except Exception as e:
+                print(f"Error processing candidate match at index {index}: {e}")
+
+
+    # It will automatically detect the language
+    # translated_text = translationModel.translate(request.text, target_lang=languageCode)
+
+    translate_duration = time.time() - start_time_translate
+    print(f"Time taken for translation: {translate_duration:.4f} seconds")
+
+    # Return response
+    return results_out
+
+
+@router.post("/translate-list/async")
+async def translate_text(request: TranslationListRequest):
+    languageMapMt = {
+        "english": "en",
+        "chinese": "zh",
+        "spanish": "es",
+        "french": "fr",
+        "german": "de",
+        "italian": "it",
+    }
+
+    start_time_translate = time.time()
+    if len(request.conversation_list) == 0:
+        return []
+
+    languageCode = languageMapMt.get(request.language, "en")
+    
+    # Pre-allocate the results list
+    results_out = [None] * len(request.conversation_list)
+    max_workers = min(10, len(request.conversation_list))
+    
+    def process_translation(args):
+        index, item = args
+        try:
+            translated_text = translate_text(item.text, languageCode)
+            return index, {
+                **item.model_dump(),
+                "translated_text": translated_text
+            }
+        except Exception as e:
+            print(f"Error processing index {index}: {e}")
+            return index, None
+
+    # Create list of tuples with index and item
+    work_items = list(enumerate(request.conversation_list))
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Map directly processes items in order and maintains order
+        for index, result in executor.map(process_translation, work_items):
+            if result is not None:
+                results_out[index] = result
+
+    translate_duration = time.time() - start_time_translate
+    print(f"Time taken for translation: {translate_duration:.4f} seconds")
+
+    # Return non-None results while maintaining order
+    return [r for r in results_out if r is not None]
+
+def translate_text(text, target_lang="en"):
+    return translationModel.translate(text, target_lang=target_lang)
+
+
+# # Function to detect language
+# def detect_language(text):
+#     return detect(text)
+
+# # Function to load the correct translation model
+# def load_translation_model(src_lang, tgt_lang):
+#     model_name = f"Helsinki-NLP/opus-mt-{src_lang}-{tgt_lang}"
+#     if model_name in model_cache:
+#         print(f"Model {model_name} found in cache")
+#         return model_cache[model_name]
+#     tokenizer = MarianTokenizer.from_pretrained(model_name)
+#     # model = MarianMTModel.from_pretrained(model_name)
+#     model = ORTModelForSeq2SeqLM.from_pretrained(model_name, from_transformers=True)
+#     model_cache[model_name] = model, tokenizer
+#     return model, tokenizer
+
+
+# langMap = {
+#     "zh-cn": "zh",
+#     "zh": "zh",
+#     "en": "en",
+#     "fr": "french",
+#     "de": "german",
+#     "it": "italian",
+# }
+
+
+# # Function to get the correct mapped language
+# def get_mapped_lang(src_lang):
+#     return langMap.get(src_lang, "en")  # Default to original if not found
+
+
+# # Function to translate text
+# def translate(text, target_lang="en"):
+#     src_lang = detect_language(text)  # Detect source language
+#     # print(f"Detected language: {src_lang}")
+#     # src_lang = "zh"
+
+#     if src_lang == target_lang:
+#         return text
+
+#     try:
+#         # model, tokenizer = load_translation_model(langMap["src_lang"], target_lang)
+#         model, tokenizer = load_translation_model(get_mapped_lang(src_lang), "en")
+#         inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
+#         translated_tokens = model.generate(**inputs)
+#         return tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+#     except Exception:
+#         return f"Translation model not available for {src_lang} to {target_lang}"
