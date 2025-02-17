@@ -303,9 +303,9 @@ groq_transcription_client = GroqTranscriptionService()
 deepgram_tts = DeepgramTTS(api_key=deepgram_api_key)
 
 ## =========================== Load Translation Model =================
-translationModel = EasyNMT("opus-mt")
-
-
+# translationModel = EasyNMT("opus-mt")
+translationModel = EasyNMT("m2m_100_418M")
+	
 ## =========================== Private method =========================
 async def transcript_audio(audio_file):
     # Read the audio file content from `UploadFile` and save it to a temporary file
@@ -732,9 +732,10 @@ class TranslationRequest(BaseModel):
     order: Optional[int] = None
 
 class TranslationSingleRequest(BaseModel):
-    text: str
+    content: str
     order: Optional[int] = None
-
+    type: str
+    translated_text: Optional[str] = None
 
 class TranslationListRequest(BaseModel):
     conversation_list: List[TranslationSingleRequest]
@@ -890,7 +891,7 @@ async def translate_text(request: TranslationListRequest):
     def process_translation(args):
         index, item = args
         try:
-            translated_text = translate_text(item.text, languageCode)
+            translated_text = translate_text(item.content, languageCode)
             return index, {
                 **item.model_dump(),
                 "translated_text": translated_text
