@@ -646,22 +646,20 @@ async def generate_token(
 
 async def transcript_audio_openAI(audio_file: UploadFile) -> str:
     url = "https://api.openai.com/v1/audio/transcriptions"
-    temp_files = []  # Keep track of all created files for cleanup
-    
+
     try:
         # Read the file content
         audio_bytes = await audio_file.read()
         if not audio_bytes:
             raise ValueError("Uploaded file is empty or unreadable.")
         
-        ## NOT THAT FILE COMING FROM Frontend is wav format. SO EVERYTHING HAS TO BE WAV 
+        ## NOTe THAT FILE COMING FROM Frontend is wav format. SO EVERYTHING HAS TO BE WAV 
         ## FOR THE NEW MODELS TO WORK!        
         
-        # Try with whisper-1 model
         files = {"file": ("recording.wav", audio_bytes , "audio/wav")}
 
         data = {
-            "model": "gpt-4o-mini-transcribe",  # Try with different model
+            "model": "gpt-4o-mini-transcribe", 
             "response_format": "json"
         }
         
@@ -681,16 +679,6 @@ async def transcript_audio_openAI(audio_file: UploadFile) -> str:
     except Exception as e:
         print(f"Error during transcription: {str(e)}")
         raise
-    
-    finally:
-        # Clean up all temporary files
-        for file_path in temp_files:
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                    print(f"Deleted temporary file: {file_path}")
-                except Exception as cleanup_error:
-                    print(f"Failed to delete temporary file {file_path}: {str(cleanup_error)}")
 
 
 @router.post("/transcribe-audio")
