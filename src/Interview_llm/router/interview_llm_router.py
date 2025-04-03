@@ -38,8 +38,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # ========================= Flags =========================
 # STT
 STT_isGroq = False
-STT_isOpenWhisper = True
-STT_isOpenWhisper_en = True
+STT_isOpenWhisper = False #True
+STT_isOpenWhisper_en = False #True
+STT_isIOpenAI = True
 
 # LLM
 LLM_isGroq = False
@@ -589,7 +590,7 @@ async def generate_token(
         - If the candidate still asks for help after 2 chances, acknowledge and move to the next question with no further prompt.
         - Track the number of help requests **per question**.
 
-    4. If the candidate clearly states they do not know the answer (e.g., "I don't know", "Not sure", "I have no idea"), respond with a short acknowledgment (e.g., "Understood.") and proceed to the next question immediately.
+    4. If the candidate clearly states they do not know the answer (e.g., "I don't know", "Not sure", "Not very sure", "I have no idea"), respond with a short acknowledgment (e.g., "Understood.") and proceed to the next question immediately.
     5. NEVER comment on whether the candidate’s answer is correct or incorrect.
     6. NEVER repeat or rephrase the candidate’s answer.
     7. Speak in a neutral, formal tone in a medium pace. Do not add humor, empathy, or suggestions.
@@ -643,6 +644,54 @@ async def generate_token(
             status_code=500, detail=f"Failed to generate token: {str(e)}"
         )
 
+async def transcript_audio_openAI(audio_file: UploadFile) -> str:
+    url = "https://api.openai.com/v1/audio/transcriptions"
+    temp_files = []  # Keep track of all created files for cleanup
+    
+    try:
+        # Read the file content
+        audio_bytes = await audio_file.read()
+        if not audio_bytes:
+            raise ValueError("Uploaded file is empty or unreadable.")
+        
+        ## NOT THAT FILE COMING FROM Frontend is wav format. SO EVERYTHING HAS TO BE WAV 
+        ## FOR THE NEW MODELS TO WORK!        
+        
+        # Try with whisper-1 model
+        files = {"file": ("recording.wav", audio_bytes , "audio/wav")}
+
+        data = {
+            "model": "gpt-4o-mini-transcribe",  # Try with different model
+            "response_format": "json"
+        }
+        
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, headers=headers, files=files, data=data)
+            
+            print(f"Status code: {response.status_code}")
+            if response.status_code == 200:
+                result = response.json()
+                return result.get("text", "")
+            else:
+                print(f"Response text: {response.text}")
+                raise Exception(f"Transcription failed: {response.status_code} - {response.text}")
+    
+    except Exception as e:
+        print(f"Error during transcription: {str(e)}")
+        raise
+    
+    finally:
+        # Clean up all temporary files
+        for file_path in temp_files:
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    print(f"Deleted temporary file: {file_path}")
+                except Exception as cleanup_error:
+                    print(f"Failed to delete temporary file {file_path}: {str(cleanup_error)}")
+
 
 @router.post("/transcribe-audio")
 async def interview(
@@ -661,8 +710,14 @@ async def interview(
         transcription_text = await transcript_audio_lang(audio_file, language)
     elif STT_isOpenWhisper:
         transcription_text = await transcript_audio(audio_file)
+    elif STT_isIOpenAI:
+        transcription_text = await transcript_audio_openAI(audio_file)
+
     stt_duration = time.time() - start_time_stt
     print(f"Time taken for Speech-to-Text (STT): {stt_duration:.4f} seconds")
+
+    # Trim text front and back for empty spaces
+    transcription_text = transcription_text.strip()
 
     # Return response
     return {"transcript": transcription_text, "order": order}
