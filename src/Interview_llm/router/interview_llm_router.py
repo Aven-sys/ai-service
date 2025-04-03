@@ -38,8 +38,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # ========================= Flags =========================
 # STT
 STT_isGroq = False
-STT_isOpenWhisper = True
-STT_isOpenWhisper_en = True
+STT_isOpenWhisper = False #True
+STT_isOpenWhisper_en = False #True
+STT_isIOpenAI = True
 
 # LLM
 LLM_isGroq = False
@@ -576,9 +577,25 @@ async def generate_token(
     You are an interviewer. Start the conversation by greeting the user warmly and explaining that you will conduct an interview. Ask the following questions sequentially:
     {questions}
 
-    Speak at a medium pace.
+    Rules you must follow STRICTLY:
 
-    Do not ask extra questions or provide additional information. Only ask the interview questions provided. 
+    1. **NEVER provide explanations, definitions, or answers to any question, even if the candidate seems confused or asks for help.**
+    2. Do NOT respond to candidate answers except with a short acknowledgment. 
+    3. If the candidate **explicitly requests the answer or asks for help** (e.g., says "Can you give me the answer?", "Tell me the answer", "Can you help me solve this?"), reply with: "I am not allowed to help you with that. Please answer the question. Thank you."
+
+        - Do NOT treat confusion or uncertainty (e.g., "I'm not sure", "I don't understand", "Maybe it's...") as a help request. These may be part of a genuine answer attempt.
+        - If the candidate appears to be trying to answer, acknowledge briefly and move on.
+        - Allow the candidate up to **2 chances** to answer the question after asking for help.
+        - Do NOT move to the next question immediately. Wait for the candidate’s attempt to answer.
+        - If the candidate still asks for help after 2 chances, acknowledge and move to the next question with no further prompt.
+        - Track the number of help requests **per question**.
+
+    4. If the candidate clearly states they do not know the answer (e.g., "I don't know", "Not sure", "Not very sure", "I have no idea"), respond with a short acknowledgment (e.g., "Understood.") and proceed to the next question immediately.
+    5. NEVER comment on whether the candidate’s answer is correct or incorrect.
+    6. NEVER repeat or rephrase the candidate’s answer.
+    7. Speak in a neutral, formal tone in a medium pace. Do not add humor, empathy, or suggestions.
+    8. Keep all responses short and concise.
+    9. Do not ask extra questions or provide additional information. Only ask the interview questions provided. 
 
     Always end your response with the question to keep the conversation flowing.
 
@@ -627,6 +644,42 @@ async def generate_token(
             status_code=500, detail=f"Failed to generate token: {str(e)}"
         )
 
+async def transcript_audio_openAI(audio_file: UploadFile) -> str:
+    url = "https://api.openai.com/v1/audio/transcriptions"
+
+    try:
+        # Read the file content
+        audio_bytes = await audio_file.read()
+        if not audio_bytes:
+            raise ValueError("Uploaded file is empty or unreadable.")
+        
+        ## NOTe THAT FILE COMING FROM Frontend is wav format. SO EVERYTHING HAS TO BE WAV 
+        ## FOR THE NEW MODELS TO WORK!        
+        
+        files = {"file": ("recording.wav", audio_bytes , "audio/wav")}
+
+        data = {
+            "model": "gpt-4o-mini-transcribe", 
+            "response_format": "json"
+        }
+        
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, headers=headers, files=files, data=data)
+            
+            print(f"Status code: {response.status_code}")
+            if response.status_code == 200:
+                result = response.json()
+                return result.get("text", "")
+            else:
+                print(f"Response text: {response.text}")
+                raise Exception(f"Transcription failed: {response.status_code} - {response.text}")
+    
+    except Exception as e:
+        print(f"Error during transcription: {str(e)}")
+        raise
+
 
 @router.post("/transcribe-audio")
 async def interview(
@@ -645,8 +698,14 @@ async def interview(
         transcription_text = await transcript_audio_lang(audio_file, language)
     elif STT_isOpenWhisper:
         transcription_text = await transcript_audio(audio_file)
+    elif STT_isIOpenAI:
+        transcription_text = await transcript_audio_openAI(audio_file)
+
     stt_duration = time.time() - start_time_stt
     print(f"Time taken for Speech-to-Text (STT): {stt_duration:.4f} seconds")
+
+    # Trim text front and back for empty spaces
+    transcription_text = transcription_text.strip()
 
     # Return response
     return {"transcript": transcription_text, "order": order}
