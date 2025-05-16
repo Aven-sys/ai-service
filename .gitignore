@@ -13,5 +13,4 @@ env.bak/
 venv.bak/
 venv
 
-.env
 tts-key.json
