@@ -14,6 +14,8 @@ import json
 from dotenv import load_dotenv
 import os
 
+from common.constants.openai_models import OPENAI_DEFAULT_CHAT_MODEL
+
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 
@@ -27,7 +29,7 @@ def get_session_history(session_id: str, memory_type: str = "chat") -> BaseChatM
             session_histories[session_id] = ChatMessageHistory()
             # session_histories[session_id] = InMemoryHistory()
         elif memory_type == "token":
-            llm = ChatOpenAI(temperature=0)
+            llm = ChatOpenAI(model=OPENAI_DEFAULT_CHAT_MODEL, temperature=0)
             session_histories[session_id] = ConversationTokenBufferMemory(
                 llm=llm,
                 max_token_limit=1000,
@@ -35,7 +37,7 @@ def get_session_history(session_id: str, memory_type: str = "chat") -> BaseChatM
                 memory_key="history"   # Must match the MessagesPlaceholder variable_name
             )
         elif memory_type == "summarize":
-            llm = ChatOpenAI(temperature=0)
+            llm = ChatOpenAI(model=OPENAI_DEFAULT_CHAT_MODEL, temperature=0)
             session_histories[session_id] = ConversationSummaryBufferMemory(
                 llm=llm,
                 max_token_limit=1000,

@@ -31,6 +31,11 @@ import time
 from langchain_google_genai import ChatGoogleGenerativeAI
 from google.cloud import speech
 import httpx
+from common.constants.openai_models import (
+    OPENAI_DEFAULT_CHAT_MODEL,
+    OPENAI_REALTIME_SESSION_MODEL,
+    OPENAI_TRANSCRIPTION_MODEL,
+)
 
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -205,7 +210,7 @@ Only set is_done to True once the interview is fully completed, and no further i
 # elif LLM_isOpenAI:
 #     parser = PydanticOutputParser(pydantic_object=InterviewOutput)
 #     prompt = prompt.partial(format_instructions=parser.get_format_instructions())
-#     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+#     llm = ChatOpenAI(model=OPENAI_DEFAULT_CHAT_MODEL, temperature=0)
 # elif LLM_isGoogleGenerativeAI:
 #     prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
 #     llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.4)
@@ -620,7 +625,7 @@ async def generate_token(
     }
 
     payload = {
-        "model": "gpt-4o-mini-realtime-preview",
+        "model": OPENAI_REALTIME_SESSION_MODEL,
         "voice": "shimmer",
         "modalities": ["audio", "text"],
         # "input_audio_transcription": {"model": "whisper-1"},
@@ -659,7 +664,7 @@ async def transcript_audio_openAI(audio_file: UploadFile) -> str:
         files = {"file": ("recording.wav", audio_bytes , "audio/wav")}
 
         data = {
-            "model": "gpt-4o-mini-transcribe", 
+            "model": OPENAI_TRANSCRIPTION_MODEL,
             "response_format": "json"
         }
         

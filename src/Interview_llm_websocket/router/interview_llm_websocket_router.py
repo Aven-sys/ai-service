@@ -42,6 +42,8 @@ from ..payload.request.llm_chat_request_dto import LLMChatRequestDto
 
 from dotenv import load_dotenv
 import os
+
+from common.constants.openai_models import OPENAI_DEFAULT_CHAT_MODEL
 import time
 from langchain_google_genai import ChatGoogleGenerativeAI
 from google.cloud import speech
@@ -212,7 +214,7 @@ if LLM_isGroq:
 elif LLM_isOpenAI:
     parser = PydanticOutputParser(pydantic_object=InterviewOutput)
     prompt = prompt.partial(format_instructions=parser.get_format_instructions())
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm = ChatOpenAI(model=OPENAI_DEFAULT_CHAT_MODEL, temperature=0)
 elif LLM_isGoogleGenerativeAI:
     prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
     llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
