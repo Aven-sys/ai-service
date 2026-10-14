@@ -217,7 +217,16 @@ elif LLM_isOpenAI:
     llm = ChatOpenAI(model=OPENAI_DEFAULT_CHAT_MODEL, temperature=0)
 elif LLM_isGoogleGenerativeAI:
     prompt = prompt.partial(format_instructions=InterviewOutput.model_json_schema())
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+    google_api_key = os.getenv("GOOGLE_API_KEY")
+    if google_api_key:
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-1.5-flash",
+            temperature=0,
+            google_api_key=google_api_key,
+        )
+    else:
+        # ADC / GOOGLE_API_KEY are not configured locally; keep the app bootable.
+        llm = ChatOpenAI(model=OPENAI_DEFAULT_CHAT_MODEL, temperature=0)
 
 # Gemini Test only
 # llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)

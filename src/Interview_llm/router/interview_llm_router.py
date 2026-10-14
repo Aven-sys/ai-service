@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, File, UploadFile, Form
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 from pydantic import BaseModel, Field
 from langchain_core.prompts import (
     ChatPromptTemplate,
@@ -37,6 +37,7 @@ from common.constants.openai_models import (
     OPENAI_TRANSCRIPTION_MODEL,
 )
 
+load_dotenv()
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -649,41 +650,48 @@ async def generate_token(
             status_code=500, detail=f"Failed to generate token: {str(e)}"
         )
 
+def _audio_filename_and_type(filename: Optional[str]) -> Tuple[str, str]:
+    name = filename or "recording.webm"
+    lower = name.lower()
+    if not lower.endswith((".webm", ".wav", ".mp3", ".mp4", ".m4a", ".ogg", ".mpga", ".mpeg")):
+        name = f"{name}.webm"
+        lower = name.lower()
+    if lower.endswith(".wav"):
+        return name, "audio/wav"
+    if lower.endswith((".mp3", ".mpga", ".mpeg")):
+        return name, "audio/mpeg"
+    if lower.endswith((".m4a", ".mp4")):
+        return name, "audio/mp4"
+    if lower.endswith(".ogg"):
+        return name, "audio/ogg"
+    return name, "audio/webm"
+
+
 async def transcript_audio_openAI(audio_file: UploadFile) -> str:
+    audio_bytes = await audio_file.read()
+    filename, _content_type = _audio_filename_and_type(audio_file.filename)
+    return await transcript_audio_openAI_bytes(audio_bytes, filename)
+
+
+async def transcript_audio_openAI_bytes(audio_bytes: bytes, filename: str) -> str:
     url = "https://api.openai.com/v1/audio/transcriptions"
-
-    try:
-        # Read the file content
-        audio_bytes = await audio_file.read()
-        if not audio_bytes:
-            raise ValueError("Uploaded file is empty or unreadable.")
-        
-        ## NOTe THAT FILE COMING FROM Frontend is wav format. SO EVERYTHING HAS TO BE WAV 
-        ## FOR THE NEW MODELS TO WORK!        
-        
-        files = {"file": ("recording.wav", audio_bytes , "audio/wav")}
-
-        data = {
-            "model": OPENAI_TRANSCRIPTION_MODEL,
-            "response_format": "json"
-        }
-        
-        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
-        
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(url, headers=headers, files=files, data=data)
-            
-            print(f"Status code: {response.status_code}")
-            if response.status_code == 200:
-                result = response.json()
-                return result.get("text", "")
-            else:
-                print(f"Response text: {response.text}")
-                raise Exception(f"Transcription failed: {response.status_code} - {response.text}")
-    
-    except Exception as e:
-        print(f"Error during transcription: {str(e)}")
-        raise
+    if not audio_bytes:
+        raise ValueError("Uploaded file is empty or unreadable.")
+    filename, content_type = _audio_filename_and_type(filename)
+    files = {"file": (filename, audio_bytes, content_type)}
+    data = {
+        "model": OPENAI_TRANSCRIPTION_MODEL,
+        "response_format": "json"
+    }
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(url, headers=headers, files=files, data=data)
+        print(f"Status code: {response.status_code}")
+        if response.status_code == 200:
+            result = response.json()
+            return result.get("text", "")
+        print(f"Response text: {response.text}")
+        raise Exception(f"Transcription failed: {response.status_code} - {response.text}")
 
 
 @router.post("/transcribe-audio")
@@ -692,26 +700,42 @@ async def interview(
     language: str = Form(...),
     order: Optional[int] = Form(None),
 ):
-    # Speech-to-Text Step
-    start_time_stt = time.time()
-    if STT_isGroq:
+    try:
+        # Speech-to-Text Step
+        start_time_stt = time.time()
         file_content = await audio_file.read()
-        transcription_text = groq_transcription_client.transcribe_audio(
-            file_content, audio_file.filename
-        )
-    elif STT_isOpenWhisper and STT_isOpenWhisper_en:
-        transcription_text = await transcript_audio_lang(audio_file, language)
-    elif STT_isOpenWhisper:
-        transcription_text = await transcript_audio(audio_file)
-    elif STT_isIOpenAI:
-        transcription_text = await transcript_audio_openAI(audio_file)
+        filename, _content_type = _audio_filename_and_type(audio_file.filename)
+        if not file_content:
+            raise HTTPException(status_code=400, detail="Audio file is empty.")
 
-    stt_duration = time.time() - start_time_stt
-    print(f"Time taken for Speech-to-Text (STT): {stt_duration:.4f} seconds")
+        if STT_isGroq:
+            transcription_text = groq_transcription_client.transcribe_audio(
+                file_content, filename
+            )
+        elif STT_isOpenWhisper and STT_isOpenWhisper_en:
+            audio_file.file.seek(0)
+            transcription_text = await transcript_audio_lang(audio_file, language)
+        elif STT_isOpenWhisper:
+            audio_file.file.seek(0)
+            transcription_text = await transcript_audio(audio_file)
+        elif STT_isIOpenAI:
+            try:
+                transcription_text = await transcript_audio_openAI_bytes(file_content, filename)
+            except Exception as openai_err:
+                print(f"OpenAI STT failed, falling back to Groq: {openai_err}")
+                transcription_text = groq_transcription_client.transcribe_audio(
+                    file_content, filename
+                )
+        else:
+            raise HTTPException(status_code=503, detail="No speech-to-text provider is enabled.")
 
-    # Trim text front and back for empty spaces
-    transcription_text = transcription_text.strip()
+        stt_duration = time.time() - start_time_stt
+        print(f"Time taken for Speech-to-Text (STT): {stt_duration:.4f} seconds")
 
-    # Return response
-    return {"transcript": transcription_text, "order": order}
+        transcription_text = (transcription_text or "").strip()
+        return {"transcript": transcription_text, "order": order}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Transcription failed: {str(e)}")
 

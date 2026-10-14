@@ -1,7 +1,7 @@
-langchain
-langchain-community
-langchain-openai
-langchain-groq
+langchain>=0.3.0,<0.4.0
+langchain-community>=0.3.0,<0.4.0
+langchain-openai>=0.2.0,<0.4.0
+langchain-groq>=0.2.0,<0.4.0
 pandas
 fastapi[standard]
 nltk
@@ -16,7 +16,7 @@ rank_bm25
 gTTS
 git+https://github.com/openai/whisper.git
 groq
-deepgram-sdk
+deepgram-sdk>=3.0.0,<4.0.0
 webrtcvad
 websockets
 pydub 
@@ -27,5 +27,5 @@ pycountry
 torchaudio
 coqui-tts
 google-cloud-texttospeech
-langchain-google-genai
+langchain-google-genai>=2.0.0,<3.0.0
  google-cloud-speech
