@@ -15,6 +15,3 @@ venv
 
 tts-key.json
 
-# Secrets - keep API keys out of git
-.env
-src/.env
